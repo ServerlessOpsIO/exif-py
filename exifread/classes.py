@@ -3,9 +3,8 @@ import struct
 from typing import BinaryIO, Dict, Any
 
 from .exif_log import get_logger
-from .utils import Ratio, ord_
+from .utils import Ratio, determine_type, ord_
 from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, makernote
-from . import _determine_type
 
 logger = get_logger()
 
@@ -61,7 +60,7 @@ class ExifHeader:
                  debug=False, detailed=True, truncate_tags=True):
         self.file_handle = file_handle
 
-        offset, endian, fake_exif = _determine_type(self.file_handle)
+        offset, endian, fake_exif = determine_type(self.file_handle)
         self.offset = offset
         self.endian = chr(ord_(endian[0]))
         self.fake_exif = fake_exif
