@@ -8,6 +8,50 @@ from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, makerno
 
 logger = get_logger()
 
+def n2b(offset, length, endian) -> bytes:
+    """Convert offset to bytes."""
+    s = b''
+    for _ in range(length):
+        if endian == 'I':
+            s += bytes([offset & 0xFF])
+        else:
+            s = bytes([offset & 0xFF]) + s
+        offset = offset >> 8
+    return s
+
+def s2n(fh, initial_offset, offset, length: int, endian, signed=False) -> int:
+    """
+    Convert slice to integer, based on sign and endian flags.
+
+    Usually this offset is assumed to be relative to the beginning of the
+    start of the EXIF information.
+    For some cameras that use relative tags, this offset may be relative
+    to some other starting point.
+    """
+    # Little-endian if Intel, big-endian if Motorola
+    fmt = '<' if endian == 'I' else '>'
+    # Construct a format string from the requested length and signedness;
+    # raise a ValueError if length is something silly like 3
+    try:
+        fmt += {
+            (1, False): 'B',
+            (1, True):  'b',
+            (2, False): 'H',
+            (2, True):  'h',
+            (4, False): 'I',
+            (4, True):  'i',
+            (8, False): 'L',
+            (8, True):  'l',
+            }[(length, signed)]
+    except KeyError:
+        raise ValueError('unexpected unpacking length: %d' % length)
+    fh.seek(initial_offset + offset)
+    buf = fh.read(length)
+    if buf:
+        return struct.unpack(fmt, buf)[0]
+    return 0
+
+
 
 class IfdTag:
     """
@@ -72,57 +116,14 @@ class ExifHeader:
         # TODO: get rid of 'Any' type
         self.tags = {}  # type: Dict[str, Any]
 
-    def s2n(self, offset, length: int, signed=False) -> int:
-        """
-        Convert slice to integer, based on sign and endian flags.
-
-        Usually this offset is assumed to be relative to the beginning of the
-        start of the EXIF information.
-        For some cameras that use relative tags, this offset may be relative
-        to some other starting point.
-        """
-        # Little-endian if Intel, big-endian if Motorola
-        fmt = '<' if self.endian == 'I' else '>'
-        # Construct a format string from the requested length and signedness;
-        # raise a ValueError if length is something silly like 3
-        try:
-            fmt += {
-                (1, False): 'B',
-                (1, True):  'b',
-                (2, False): 'H',
-                (2, True):  'h',
-                (4, False): 'I',
-                (4, True):  'i',
-                (8, False): 'L',
-                (8, True):  'l',
-                }[(length, signed)]
-        except KeyError:
-            raise ValueError('unexpected unpacking length: %d' % length)
-        self.file_handle.seek(self.offset + offset)
-        buf = self.file_handle.read(length)
-        if buf:
-            return struct.unpack(fmt, buf)[0]
-        return 0
-
-    def n2b(self, offset, length) -> bytes:
-        """Convert offset to bytes."""
-        s = b''
-        for _ in range(length):
-            if self.endian == 'I':
-                s += bytes([offset & 0xFF])
-            else:
-                s = bytes([offset & 0xFF]) + s
-            offset = offset >> 8
-        return s
-
     def _first_ifd(self) -> int:
         """Return first IFD."""
-        return self.s2n(4, 4)
+        return s2n(self.file_handle, self.offset, 4, 4, self.endian)
 
     def _next_ifd(self, ifd) -> int:
         """Return the pointer to next IFD."""
-        entries = self.s2n(ifd, 2)
-        next_ifd = self.s2n(ifd + 2 + 12 * entries, 4)
+        entries = s2n(self.file_handle, self.offset, ifd, 2, self.endian)
+        next_ifd = s2n(self.file_handle, self.offset, ifd + 2 + 12 * entries, 4, self.endian)
         if next_ifd == ifd:
             return 0
         return next_ifd
@@ -147,8 +148,8 @@ class ExifHeader:
                 if field_type in (5, 10):
                     # a ratio
                     value = Ratio(
-                        self.s2n(offset, 4, signed),
-                        self.s2n(offset + 4, 4, signed)
+                        s2n(self.file_handle, self.offset, offset, 4, self.endian, signed),
+                        s2n(self.file_handle, self.offset, offset + 4, 4, self.endian, signed)
                     )
                 elif field_type in (11, 12):
                     # a float or double
@@ -165,14 +166,14 @@ class ExifHeader:
                     byte_str = self.file_handle.read(type_length)
                     value = struct.unpack(unpack_format, byte_str)
                 else:
-                    value = self.s2n(offset, type_length, signed)
+                    value = s2n(self.file_handle, self.offset, offset, type_length, self.endian, signed)
                 values.append(value)
                 offset = offset + type_length
         # The test above causes problems with tags that are
         # supposed to have long values! Fix up one important case.
         elif tag_name in ('MakerNote', makernote.canon.CAMERA_INFO_TAG_NAME):
             for _ in range(count):
-                value = self.s2n(offset, type_length, signed)
+                value = s2n(self.file_handle, self.offset, offset, type_length, self.endian, signed)
                 values.append(value)
                 offset = offset + type_length
         return values
@@ -204,7 +205,7 @@ class ExifHeader:
         return values
 
     def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, relative, stop_tag) -> None:
-        field_type = self.s2n(entry + 2, 2)
+        field_type = s2n(self.file_handle, self.offset, entry + 2, 2, self.endian)
 
         # unknown field type
         if not 0 < field_type < len(FIELD_TYPES):
@@ -213,7 +214,7 @@ class ExifHeader:
             raise ValueError('Unknown type %d in tag 0x%04X' % (field_type, tag))
 
         type_length = FIELD_TYPES[field_type][0]
-        count = self.s2n(entry + 4, 4)
+        count = s2n(self.file_handle, self.offset, entry + 4, 4, self.endian)
         # Adjust for tag id/type/count (2+2+4 bytes)
         # Now we point at either the data or the 2nd level offset
         offset = entry + 8
@@ -228,12 +229,12 @@ class ExifHeader:
             # other relative offsets, which would have to be computed here
             # slightly differently.
             if relative:
-                tmp_offset = self.s2n(offset, 4)
+                tmp_offset = s2n(self.file_handle, self.offset, offset, 4, self.endian)
                 offset = tmp_offset + ifd - 8
                 if self.fake_exif:
                     offset += 18
             else:
-                offset = self.s2n(offset, 4)
+                offset = s2n(self.file_handle, self.offset, offset, 4, self.endian)
 
         field_offset = offset
         values = None
@@ -311,7 +312,7 @@ class ExifHeader:
         if tag_dict is None:
             tag_dict = EXIF_TAGS
         try:
-            entries = self.s2n(ifd, 2)
+            entries = s2n(self.file_handle, self.offset, ifd, 2, self.endian)
         except TypeError:
             logger.warning('Possibly corrupted IFD: %s', ifd)
             return
@@ -319,7 +320,7 @@ class ExifHeader:
         for i in range(entries):
             # entry is index of start of this IFD in the file
             entry = ifd + 2 + 12 * i
-            tag = self.s2n(entry, 2)
+            tag = s2n(self.file_handle, self.offset, entry, 2, self.endian)
 
             # get tag name early to avoid errors, help debug
             tag_entry = tag_dict.get(tag)
@@ -346,7 +347,7 @@ class ExifHeader:
         if not thumb or thumb.printable != 'Uncompressed TIFF':
             return
 
-        entries = self.s2n(thumb_ifd, 2)
+        entries = s2n(self.file_handle, self.offset, thumb_ifd, 2, self.endian)
         # this is header plus offset to IFD ...
         if self.endian == 'M':
             tiff = b'MM\x00*\x00\x00\x00\x08'
@@ -359,11 +360,11 @@ class ExifHeader:
         # fix up large value offset pointers into data area
         for i in range(entries):
             entry = thumb_ifd + 2 + 12 * i
-            tag = self.s2n(entry, 2)
-            field_type = self.s2n(entry + 2, 2)
+            tag = s2n(self.file_handle, self.offset, entry, 2, self.endian)
+            field_type = s2n(self.file_handle, self.offset, entry + 2, 2, self.endian)
             type_length = FIELD_TYPES[field_type][0]
-            count = self.s2n(entry + 4, 4)
-            old_offset = self.s2n(entry + 8, 4)
+            count = s2n(self.file_handle, self.offset, entry + 4, 4, self.endian)
+            old_offset = s2n(self.file_handle, self.offset, entry + 8, 4, self.endian)
             # start of the 4-byte pointer area in entry
             ptr = i * 12 + 18
             # remember strip offsets location
@@ -375,7 +376,7 @@ class ExifHeader:
                 # update offset pointer (nasty "strings are immutable" crap)
                 # should be able to say "tiff[ptr:ptr+4]=newoff"
                 newoff = len(tiff)
-                tiff = tiff[:ptr] + self.n2b(newoff, 4) + tiff[ptr + 4:]
+                tiff = tiff[:ptr] + n2b(newoff, 4, self.endian) + tiff[ptr + 4:]
                 # remember strip offsets location
                 if tag == 0x0111:
                     strip_off = newoff
@@ -389,7 +390,7 @@ class ExifHeader:
         old_counts = self.tags['Thumbnail StripByteCounts'].values
         for i, old_offset in enumerate(old_offsets):
             # update offset pointer (more nasty "strings are immutable" crap)
-            offset = self.n2b(len(tiff), strip_len)
+            offset = n2b(len(tiff), strip_len, self.endian)
             tiff = tiff[:strip_off] + offset + tiff[strip_off + strip_len:]
             strip_off += strip_len
             # add pixel strip to end
