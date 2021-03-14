@@ -501,7 +501,7 @@ class Ifd(IfdBase):
         for t in SUBIFD_TAGS:
             tag_entry = SUBIFD_TAGS.get(t)
             tag = self.tags.get(t)
-            if tag is not None:
+            if tag is not None and tag_entry is not None:
                 try:
                     for value in tag.values:
                         logger.debug('%s SubIFD at offset %d:', tag_entry[0], value)
