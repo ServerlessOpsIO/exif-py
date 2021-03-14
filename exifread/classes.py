@@ -4,7 +4,7 @@ from typing import BinaryIO, Dict, Any, List, Optional
 
 from .exif_log import get_logger
 from .utils import Ratio, determine_type, ord_
-from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, SUBIFD_TAGS, makernote
+from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, SUBIFD_TAGS, IFD_TAG_MAP, makernote
 
 logger = get_logger()
 
@@ -64,7 +64,6 @@ class IfdBase:
         ifd_offset: int,
         endian: str,
         fake_exif: int,
-        tag_dict: dict,
         strict: bool=False,
         detailed: bool=True,
         truncate_tags: bool=True
@@ -76,12 +75,13 @@ class IfdBase:
         self.ifd_offset = ifd_offset
         self.endian = endian
         self.fake_exif = fake_exif
-        self.tag_dict = tag_dict    # FIXME: We could base this off ifd_name.
 
         self.strict = strict
         self.detailed = detailed
         self.truncate_tags = truncate_tags
         self.tags = {}  # type: Dict[str, Any]
+
+        self.tag_dict = IFD_TAG_MAP.get(self.ifd_name, {})
 
         self.dump_ifd()
 
@@ -474,7 +474,6 @@ class Ifd(IfdBase):
         ifd_offset: int,
         endian: str,
         fake_exif: int,
-        tag_dict: dict,
         strict: bool=False,
         detailed: bool=True,
         truncate_tags: bool=True
@@ -486,7 +485,6 @@ class Ifd(IfdBase):
             ifd_offset,
             endian,
             fake_exif,
-            tag_dict,
             strict,
             detailed,
             truncate_tags
@@ -495,23 +493,26 @@ class Ifd(IfdBase):
         self.sub_ifds: List[Optional[SubIfd]] = []
         self.dump_sub_ifds()
 
+        # FIXME: Process MakerNotes
+        # FIXME: Not sure maker note values are resolved
+
     def dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, relative: int=0, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate SubIFDs."""
-        for tag_entry in SUBIFD_TAGS:
-            tag = self.tags.get(self.ifd_name + ' ' + tag_entry[0])
+        for t in SUBIFD_TAGS:
+            tag_entry = SUBIFD_TAGS.get(t)
+            tag = self.tags.get(t)
             if tag is not None:
                 try:
                     for value in tag.values:
-                        logger.debug('%s SubIFD at offset %d:', tag_entry[1], value)
+                        logger.debug('%s SubIFD at offset %d:', tag_entry[0], value)
                         self.sub_ifds.append(
                             SubIfd(
                                 self.file_handle,
-                                tag_entry[1],
+                                tag_entry[0],
                                 self.parent_offset,
                                 value,
                                 self.endian,
                                 self.fake_exif,
-                                tag_entry[2],
                                 self,
                                 self.strict,
                                 self.detailed,
@@ -519,7 +520,7 @@ class Ifd(IfdBase):
                             )
                         )
                 except IndexError:
-                    logger.warning('No values found for %s SubIFD', tag_entry[1])
+                    logger.warning('No values found for %s SubIFD', tag_entry[0])
 
 
 class SubIfd(IfdBase):
@@ -534,7 +535,6 @@ class SubIfd(IfdBase):
         ifd_offset: int,
         endian: str,
         fake_exif: int,
-        tag_dict: dict,
         parent_ifd: Ifd,
         strict: bool=False,
         detailed: bool=True,
@@ -547,7 +547,6 @@ class SubIfd(IfdBase):
             ifd_offset,
             endian,
             fake_exif,
-            tag_dict,
             strict,
             detailed,
             truncate_tags
@@ -737,8 +736,8 @@ class ExifHeader:
             elif ctr == 1:
                 ifd_name = 'Thumbnail'
             ifd = Ifd(self.file_handle, ifd_name, self.offset, ifd_offset,
-                      self.endian, self.fake_exif, EXIF_TAGS, self.strict,
-                      self.detailed, self.truncate_tags)
+                      self.endian, self.fake_exif, self.strict, self.detailed,
+                      self.truncate_tags)
             ifds.append(ifd)
             ctr += 1
         return ifds

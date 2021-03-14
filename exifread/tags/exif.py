@@ -6,7 +6,8 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 from ..utils import make_string, make_string_uc
 
 SubIfdTagsType = Dict[int, Union[Tuple[str], Tuple[str, Union[Callable, Dict[int, str]]]]]
-SubIfdTagsMapType = List[Tuple[str, str, SubIfdTagsType]]
+IfdTagMapType = Dict[str, SubIfdTagsType]
+SubIfdTagsMapType = Dict[str, Tuple[str, SubIfdTagsType]]
 
 
 # Interoperability tags
@@ -454,10 +455,27 @@ EXIF_TAGS: SubIfdTagsType = {
     0xFDE9: ('SerialNumber', ),
 }
 
-SUBIFD_TAGS: SubIfdTagsMapType = [
-    ('ExifOffset', 'EXIF', EXIF_TAGS),
-    ('GPSInfo', 'GPS', GPS_TAGS),
-    ('InteroperabilityOffset', 'Interoperability', INTEROP_TAGS),
-    ('SubIFDs', 'SubIFD', EXIF_TAGS),
-]
+IFD_TAG_MAP: IfdTagMapType = {
+    'IFD0': EXIF_TAGS,
+    'IFD1': EXIF_TAGS,
+    'EXIF': EXIF_TAGS,
+    'GPS': GPS_TAGS,
+    'Interoperability': INTEROP_TAGS,
+    'SubIFD': EXIF_TAGS,
+}
+
+SUBIFD_TAGS: SubIfdTagsMapType = {
+    'ExifOffset': (
+        'EXIF', IFD_TAG_MAP.get('EXIF', {})
+    ),
+    'GPSInfo': (
+        'GPS', IFD_TAG_MAP.get('GPS', {})
+    ),
+    'InteroperabilityOffset': (
+        'Interoperability', IFD_TAG_MAP.get('Interoperability', {})
+    ),
+    'SubIFDs': (
+        'SubIFD', IFD_TAG_MAP.get('SubIFD', {})
+    ),
+}
 
