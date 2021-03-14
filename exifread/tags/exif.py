@@ -1,24 +1,25 @@
 """
 Standard tag definitions.
 """
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from ..utils import make_string, make_string_uc
 
+SubIfdTagsType = Dict[int, Union[Tuple[str], Tuple[str, Union[Callable, Dict[int, str]]]]]
+SubIfdTagsMapType = List[Tuple[str, str, SubIfdTagsType]]
+
+
 # Interoperability tags
-INTEROP_TAGS = {
+INTEROP_TAGS: SubIfdTagsType = {
     0x0001: ('InteroperabilityIndex', ),
     0x0002: ('InteroperabilityVersion', ),
     0x1000: ('RelatedImageFileFormat', ),
     0x1001: ('RelatedImageWidth', ),
     0x1002: ('RelatedImageLength', ),
 }
-INTEROP_INFO = (
-    'Interoperability',
-    INTEROP_TAGS
-)
 
 # GPS tags
-GPS_TAGS = {
+GPS_TAGS: SubIfdTagsType = {
     0x0000: ('GPSVersionID', ),
     0x0001: ('GPSLatitudeRef', ),
     0x0002: ('GPSLatitude', ),
@@ -51,13 +52,9 @@ GPS_TAGS = {
     0x001D: ('GPSDate', ),
     0x001E: ('GPSDifferential', ),
 }
-GPS_INFO = (
-    'GPS',
-    GPS_TAGS
-)
 
 # Main Exif tag names
-EXIF_TAGS = {
+EXIF_TAGS: SubIfdTagsType = {
     0x00FE: ('SubfileType', {
         0x0: 'Full-resolution Image',
         0x1: 'Reduced-resolution image',
@@ -242,7 +239,7 @@ EXIF_TAGS = {
         8: 'Landscape Mode'
     }),
     0x8824: ('SpectralSensitivity', ),
-    0x8825: ('GPSInfo', GPS_INFO),  # GPS tags
+    0x8825: ('GPSInfo', ),  # GPS tags
     0x8827: ('ISOSpeedRatings', ),
     0x8828: ('OECF', ),
     0x8829: ('Interlace', ),
@@ -370,7 +367,7 @@ EXIF_TAGS = {
     0xA002: ('ExifImageWidth', ),
     0xA003: ('ExifImageLength', ),
     0xA004: ('RelatedSoundFile', ),
-    0xA005: ('InteroperabilityOffset', INTEROP_INFO),
+    0xA005: ('InteroperabilityOffset', ),
     0xA20B: ('FlashEnergy', ),               # 0x920B in TIFF/EP
     0xA20C: ('SpatialFrequencyResponse', ),  # 0x920C
     0xA20E: ('FocalPlaneXResolution', ),     # 0x920E
@@ -456,3 +453,11 @@ EXIF_TAGS = {
     0xFDE8: ('OwnerName', ),
     0xFDE9: ('SerialNumber', ),
 }
+
+SUBIFD_TAGS: SubIfdTagsMapType = [
+    ('ExifOffset', 'EXIF', EXIF_TAGS),
+    ('GPSInfo', 'GPS', GPS_TAGS),
+    ('InteroperabilityOffset', 'Interoperability', INTEROP_TAGS),
+    ('SubIFDs', 'SubIFD', EXIF_TAGS),
+]
+

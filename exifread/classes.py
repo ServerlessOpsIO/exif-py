@@ -1,10 +1,10 @@
 import re
 import struct
-from typing import BinaryIO, Dict, Any, List
+from typing import BinaryIO, Dict, Any, List, Optional
 
 from .exif_log import get_logger
 from .utils import Ratio, determine_type, ord_
-from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, makernote
+from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, SUBIFD_TAGS, makernote
 
 logger = get_logger()
 
@@ -347,11 +347,6 @@ class IfdBase:
             if tag_name == stop_tag:
                 break
 
-
-    def list_sub_ifds(self):
-        """Return the list SubIFDs in an Ifd"""
-        pass
-
     def decode_maker_note(self) -> None:
         """
         Decode all the camera-specific MakerNote formats
@@ -496,6 +491,69 @@ class Ifd(IfdBase):
             detailed,
             truncate_tags
         )
+
+        self.sub_ifds: List[Optional[SubIfd]] = []
+        self.dump_sub_ifds()
+
+    def dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, relative: int=0, stop_tag: str=DEFAULT_STOP_TAG) -> None:
+        """Populate SubIFDs."""
+        for tag_entry in SUBIFD_TAGS:
+            tag = self.tags.get(self.ifd_name + ' ' + tag_entry[0])
+            if tag is not None:
+                try:
+                    for value in tag.values:
+                        logger.debug('%s SubIFD at offset %d:', tag_entry[1], value)
+                        self.sub_ifds.append(
+                            SubIfd(
+                                self.file_handle,
+                                tag_entry[1],
+                                self.parent_offset,
+                                value,
+                                self.endian,
+                                self.fake_exif,
+                                tag_entry[2],
+                                self,
+                                self.strict,
+                                self.detailed,
+                                self.truncate_tags
+                            )
+                        )
+                except IndexError:
+                    logger.warning('No values found for %s SubIFD', tag_entry[1])
+
+
+class SubIfd(IfdBase):
+    """
+    A SubIfd
+    """
+    def __init__(
+        self,
+        file_handle: BinaryIO,
+        ifd_name: str,
+        parent_offset: int,
+        ifd_offset: int,
+        endian: str,
+        fake_exif: int,
+        tag_dict: dict,
+        parent_ifd: Ifd,
+        strict: bool=False,
+        detailed: bool=True,
+        truncate_tags: bool=True
+    ):
+        super().__init__(
+            file_handle,
+            ifd_name,
+            parent_offset,
+            ifd_offset,
+            endian,
+            fake_exif,
+            tag_dict,
+            strict,
+            detailed,
+            truncate_tags
+        )
+
+        self.parent_ifd = parent_ifd
 
 
 class IfdTag:
