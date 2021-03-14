@@ -4,7 +4,7 @@ Read Exif metadata from tiff and jpeg files.
 from typing import BinaryIO
 
 from .exif_log import get_logger
-from .classes import ExifHeader
+from .classes import ExifHeader, Ifd
 from .tags import DEFAULT_STOP_TAG
 from .utils import determine_type
 from .heic import HEICExifFinder

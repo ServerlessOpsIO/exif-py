@@ -4,7 +4,7 @@ Misc utilities.
 
 from fractions import Fraction
 import struct
-from typing import BinaryIO, Union
+from typing import BinaryIO, Union, Tuple
 
 from .heic import HEICExifFinder
 from .exif_log import get_logger
@@ -30,7 +30,7 @@ def increment_base(data, base):
     return ord_(data[base + 2]) * 256 + ord_(data[base + 3]) + 2
 
 
-def find_tiff_exif(fh: BinaryIO) -> tuple:
+def find_tiff_exif(fh: BinaryIO) -> Tuple[int, bytes]:
     logger.debug("TIFF format recognized in data[0:2]")
     fh.seek(0)
     endian = fh.read(1)
@@ -39,7 +39,7 @@ def find_tiff_exif(fh: BinaryIO) -> tuple:
     return offset, endian
 
 
-def find_webp_exif(fh: BinaryIO) -> tuple:
+def find_webp_exif(fh: BinaryIO) -> Tuple[int, bytes]:
     logger.debug("WebP format recognized in data[0:4], data[8:12]")
     # file specification: https://developers.google.com/speed/webp/docs/riff_container
     data = fh.read(5)
@@ -59,7 +59,7 @@ def find_webp_exif(fh: BinaryIO) -> tuple:
     raise ExifNotFound("Webp file does not have exif data.")
 
 
-def find_jpeg_exif(fh: BinaryIO, data, fake_exif) -> tuple:
+def find_jpeg_exif(fh: BinaryIO, data, fake_exif) -> Tuple[int, bytes, int]:
     logger.debug("JPEG format recognized data[0:2]=0x%X%X", ord_(data[0]), ord_(data[1]))
     base = 2
     logger.debug("data[2]=0x%X data[3]=0x%X data[6:10]=%s", ord_(data[2]), ord_(data[3]), data[6:10])
@@ -191,7 +191,7 @@ def find_jpeg_exif(fh: BinaryIO, data, fake_exif) -> tuple:
     return offset, endian, fake_exif
 
 
-def determine_type(fh: BinaryIO) -> tuple:
+def determine_type(fh: BinaryIO) -> Tuple[int, bytes, int]:
     # by default do not fake an EXIF beginning
     fake_exif = 0
 
