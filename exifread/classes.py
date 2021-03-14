@@ -306,10 +306,10 @@ class IfdBase:
                     # value to be used in a lookup table it is possible.
                     printable = tag_entry[1].get(val, repr(values))
 
-        self.tags[ifd_name + ' ' + tag_name] = IfdTag(
+        self.tags[tag_name] = IfdTag(
             printable, tag, field_type, values, field_offset, count * type_length
         )
-        tag_value = repr(self.tags[ifd_name + ' ' + tag_name])
+        tag_value = repr(self.tags[tag_name])
         logger.debug(' %s: %s', tag_name, tag_value)
 
     def dump_ifd(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, relative: int=0, stop_tag: str=DEFAULT_STOP_TAG) -> None:
