@@ -52,34 +52,38 @@ def s2n(fh, initial_offset, offset, length: int, endian, signed=False) -> int:
     return 0
 
 
-class Ifd:
+class IfdBase:
     """
     An Ifd
     """
     def __init__(
         self,
         file_handle: BinaryIO,
-        name: str,
+        ifd_name: str,
         parent_offset: int,
         ifd_offset: int,
         endian: str,
         fake_exif: int,
+        tag_dict: dict,
         strict: bool=False,
         detailed: bool=True,
         truncate_tags: bool=True
     ):
         self.file_handle = file_handle
-        self.name = name
+        self.ifd_name = ifd_name
 
         self.parent_offset = parent_offset
         self.ifd_offset = ifd_offset
         self.endian = endian
         self.fake_exif = fake_exif
+        self.tag_dict = tag_dict    # FIXME: We could base this off ifd_name.
 
         self.strict = strict
         self.detailed = detailed
         self.truncate_tags = truncate_tags
         self.tags = {}  # type: Dict[str, Any]
+
+        self.dump_ifd()
 
     # TODO Decode Olympus MakerNote tag based on offset within tag.
     # def _olympus_decode_tag(self, value, mn_tags):
@@ -273,14 +277,7 @@ class Ifd:
                 if callable(tag_entry[1]):
                     # call mapping function
                     printable = tag_entry[1](values)
-                # Tag with SubIFDs
-                elif isinstance(tag_entry[1], tuple):
-                    ifd_info = tag_entry[1]
-                    try:
-                        logger.debug('%s SubIFD at offset %d:', ifd_info[0], values[0])
-                        self.dump_ifd(values[0], ifd_info[0], tag_dict=ifd_info[1], stop_tag=stop_tag)
-                    except IndexError:
-                        logger.warning('No values found for %s SubIFD', ifd_info[0])
+
                 elif isinstance(values, list):
                     # A list can be a list of the same type of value or a list of values with a
                     # different meaning by position.
@@ -315,13 +312,16 @@ class Ifd:
         tag_value = repr(self.tags[ifd_name + ' ' + tag_name])
         logger.debug(' %s: %s', tag_name, tag_value)
 
-    def dump_ifd(self, ifd_offset: int, ifd_name: str, tag_dict=None, relative=0, stop_tag=DEFAULT_STOP_TAG) -> None:
-        """
-        Return a list of entries in the given IFD.
-        """
-        # make sure we can process the entries
+    def dump_ifd(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, relative: int=0, stop_tag: str=DEFAULT_STOP_TAG) -> None:
+        """Populate IFD tags."""
+
+        if ifd_offset is None:
+            ifd_offset = self.ifd_offset
+        if ifd_name is None:
+            ifd_name = self.ifd_name
         if tag_dict is None:
-            tag_dict = EXIF_TAGS
+            tag_dict = self.tag_dict
+
         try:
             entries = s2n(self.file_handle, self.parent_offset, ifd_offset, 2, self.endian)
         except TypeError:
@@ -467,6 +467,37 @@ class Ifd:
             return
 
 
+class Ifd(IfdBase):
+    """
+    An IFD
+    """
+    def __init__(
+        self,
+        file_handle: BinaryIO,
+        ifd_name: str,
+        parent_offset: int,
+        ifd_offset: int,
+        endian: str,
+        fake_exif: int,
+        tag_dict: dict,
+        strict: bool=False,
+        detailed: bool=True,
+        truncate_tags: bool=True
+    ):
+        super().__init__(
+            file_handle,
+            ifd_name,
+            parent_offset,
+            ifd_offset,
+            endian,
+            fake_exif,
+            tag_dict,
+            strict,
+            detailed,
+            truncate_tags
+        )
+
+
 class IfdTag:
     """
     Eases dealing with tags.
@@ -538,15 +569,7 @@ class ExifHeader:
         """Return first IFD."""
         return s2n(self.file_handle, self.offset, 4, 4, self.endian)
 
-    def _next_ifd(self, ifd) -> int:
-        """Return the pointer to next IFD."""
-        entries = s2n(self.file_handle, self.offset, ifd, 2, self.endian)
-        next_ifd = s2n(self.file_handle, self.offset, ifd + 2 + 12 * entries, 4, self.endian)
-        if next_ifd == ifd:
-            return 0
-        return next_ifd
-
-    def list_header_ifd_offsets(self) -> List[int]:
+    def _list_header_ifd_offsets(self) -> List[int]:
         """Return the list of IFDs in the header."""
         i = self._first_ifd()
         ifds = []
@@ -555,10 +578,13 @@ class ExifHeader:
             i = self._next_ifd(i)
         return ifds
 
-    def list_ifds(self) -> List[Ifd]:
-        """Return the list of IFDs in the header."""
-        pass
-
+    def _next_ifd(self, ifd) -> int:
+        """Return the pointer to next IFD."""
+        entries = s2n(self.file_handle, self.offset, ifd, 2, self.endian)
+        next_ifd = s2n(self.file_handle, self.offset, ifd + 2 + 12 * entries, 4, self.endian)
+        if next_ifd == ifd:
+            return 0
+        return next_ifd
 
     def extract_tiff_thumbnail(self, thumb_ifd: int) -> None:
         """
@@ -642,6 +668,22 @@ class ExifHeader:
             if thumb_offset:
                 self.file_handle.seek(self.offset + thumb_offset.values[0])
                 self.tags['JPEGThumbnail'] = self.file_handle.read(thumb_offset.field_length)
+
+    def list_ifds(self) -> List[Ifd]:
+        """Return the list of IFDs in the header."""
+        ifds = []
+        ctr = 0
+        for ifd_offset in self._list_header_ifd_offsets():
+            if ctr == 0:
+                ifd_name = 'IFD0'
+            elif ctr == 1:
+                ifd_name = 'Thumbnail'
+            ifd = Ifd(self.file_handle, ifd_name, self.offset, ifd_offset,
+                      self.endian, self.fake_exif, EXIF_TAGS, self.strict,
+                      self.detailed, self.truncate_tags)
+            ifds.append(ifd)
+            ctr += 1
+        return ifds
 
     def parse_xmp(self, xmp_bytes: bytes):
         """Adobe's Extensible Metadata Platform, just dump the pretty XML."""
