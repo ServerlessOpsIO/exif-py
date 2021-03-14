@@ -65,7 +65,6 @@ class Ifd:
         endian: str,
         fake_exif: int,
         strict: bool=False,
-        debug: bool=False,
         detailed: bool=True,
         truncate_tags: bool=True
     ):
@@ -78,7 +77,6 @@ class Ifd:
         self.fake_exif = fake_exif
 
         self.strict = strict
-        self.debug = debug
         self.detailed = detailed
         self.truncate_tags = truncate_tags
         self.tags = {}  # type: Dict[str, Any]
@@ -509,12 +507,19 @@ class IfdTag:
             )
         return tag
 
+
+class IfdTagValue:
+    """
+    IFD Tag value
+    """
+    pass
+
+
 class ExifHeader:
     """
     Handle an EXIF header.
     """
-    def __init__(self, file_handle: BinaryIO, strict: bool,
-                 debug=False, detailed=True, truncate_tags=True):
+    def __init__(self, file_handle: BinaryIO, strict: bool, detailed=True, truncate_tags=True):
         self.file_handle = file_handle
 
         # FIXME: Can we deimplify this?
@@ -524,7 +529,6 @@ class ExifHeader:
         self.fake_exif = fake_exif
 
         self.strict = strict
-        self.debug = debug
         self.detailed = detailed
         self.truncate_tags = truncate_tags
         # TODO: get rid of 'Any' type

@@ -54,7 +54,7 @@ def process_file(fh: BinaryIO, stop_tag=DEFAULT_STOP_TAG,
     if auto_seek:
         fh.seek(0)
 
-    hdr = ExifHeader(fh, strict, debug, details, truncate_tags)
+    hdr = ExifHeader(fh, strict, details, truncate_tags)
 
     # deal with the EXIF info we found
     logger.debug("Endian format is %s (%s)", hdr.endian, {
