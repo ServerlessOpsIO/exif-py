@@ -80,7 +80,7 @@ class IfdBase:
         self.detailed = detailed
         self.truncate_tags = truncate_tags
         self.tags = {}  # type: Dict[str, Any]
-
+        self.relative_tags = False
         self.tag_dict = IFD_TAG_MAP.get(self.ifd_name, {})
 
         self.dump_ifd()
@@ -219,7 +219,7 @@ class IfdBase:
                 values = ''
         return values
 
-    def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, relative, stop_tag) -> None:
+    def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, stop_tag) -> None:
         field_type = s2n(self.file_handle, self.parent_offset, entry + 2, 2, self.endian)
 
         # unknown field type
@@ -243,7 +243,7 @@ class IfdBase:
             # is for the Nikon type 3 makernote.  Other cameras may use
             # other relative offsets, which would have to be computed here
             # slightly differently.
-            if relative:
+            if self.relative_tags:
                 tmp_offset = s2n(self.file_handle, self.parent_offset, offset, 4, self.endian)
                 offset = tmp_offset + ifd - 8
                 if self.fake_exif:
@@ -312,7 +312,7 @@ class IfdBase:
         tag_value = repr(self.tags[tag_name])
         logger.debug(' %s: %s', tag_name, tag_value)
 
-    def dump_ifd(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, relative: int=0, stop_tag: str=DEFAULT_STOP_TAG) -> None:
+    def dump_ifd(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate IFD tags."""
 
         if ifd_offset is None:
@@ -342,7 +342,7 @@ class IfdBase:
 
             # ignore certain tags for faster processing
             if not (not self.detailed and tag in IGNORE_TAGS):
-                self._process_tag(ifd_offset, ifd_name, tag_entry, entry, tag, tag_name, relative, stop_tag)
+                self._process_tag(ifd_offset, ifd_name, tag_entry, entry, tag, tag_name, stop_tag)
 
             if tag_name == stop_tag:
                 break
@@ -493,7 +493,7 @@ class Ifd(IfdBase):
                 del self.tags[makernote.canon.CAMERA_INFO_TAG_NAME]
             return
 
-    def dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, relative: int=0, stop_tag: str=DEFAULT_STOP_TAG) -> None:
+    def dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate SubIFDs."""
         for t in SUBIFD_TAGS:
             tag_entry = SUBIFD_TAGS.get(t)
