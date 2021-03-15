@@ -347,7 +347,39 @@ class IfdBase:
             if tag_name == stop_tag:
                 break
 
-    def decode_maker_note(self) -> None:
+
+class Ifd(IfdBase):
+    """
+    An IFD
+    """
+    def __init__(
+        self,
+        file_handle: BinaryIO,
+        ifd_name: str,
+        parent_offset: int,
+        ifd_offset: int,
+        endian: str,
+        fake_exif: int,
+        strict: bool=False,
+        detailed: bool=True,
+        truncate_tags: bool=True
+    ):
+        super().__init__(
+            file_handle,
+            ifd_name,
+            parent_offset,
+            ifd_offset,
+            endian,
+            fake_exif,
+            strict,
+            detailed,
+            truncate_tags
+        )
+
+        self.sub_ifds: List[Optional[SubIfd]] = []
+        self.dump_sub_ifds()
+
+    def dump_makernotes(self) -> None:
         """
         Decode all the camera-specific MakerNote formats
 
@@ -460,41 +492,6 @@ class IfdBase:
                 self._canon_decode_camera_info(tag)
                 del self.tags[makernote.canon.CAMERA_INFO_TAG_NAME]
             return
-
-
-class Ifd(IfdBase):
-    """
-    An IFD
-    """
-    def __init__(
-        self,
-        file_handle: BinaryIO,
-        ifd_name: str,
-        parent_offset: int,
-        ifd_offset: int,
-        endian: str,
-        fake_exif: int,
-        strict: bool=False,
-        detailed: bool=True,
-        truncate_tags: bool=True
-    ):
-        super().__init__(
-            file_handle,
-            ifd_name,
-            parent_offset,
-            ifd_offset,
-            endian,
-            fake_exif,
-            strict,
-            detailed,
-            truncate_tags
-        )
-
-        self.sub_ifds: List[Optional[SubIfd]] = []
-        self.dump_sub_ifds()
-
-        # FIXME: Process MakerNotes
-        # FIXME: Not sure maker note values are resolved
 
     def dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, relative: int=0, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate SubIFDs."""
