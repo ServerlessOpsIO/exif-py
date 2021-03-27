@@ -13,7 +13,7 @@ class ExifHeader:
     """
     Handle an EXIF header.
     """
-    def __init__(self, file_handle: BinaryIO, strict: bool, truncate_tags=True):
+    def __init__(self, file_handle: BinaryIO, truncate_tags=True):
         self.file_handle = file_handle
 
         # FIXME: Can we deimplify this?
@@ -22,7 +22,6 @@ class ExifHeader:
         self.endian = chr(ord_(endian[0]))
         self.fake_exif = fake_exif
 
-        self.strict = strict
         self.truncate_tags = truncate_tags
         # TODO: get rid of 'Any' type
         self.tags = {}  # type: Dict[str, Any]
@@ -141,7 +140,7 @@ class ExifHeader:
             elif ctr == 1:
                 ifd_name = 'Thumbnail'
             ifd = Ifd(self.file_handle, ifd_name, self.offset, ifd_offset,
-                      self.endian, self.fake_exif, self.strict, self.truncate_tags)
+                      self.endian, self.fake_exif, self.truncate_tags)
             ifds.append(ifd)
             ctr += 1
         return ifds
