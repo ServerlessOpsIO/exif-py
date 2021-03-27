@@ -494,7 +494,21 @@ class Ifd(IfdBase):
 
         # Olympus
         if make.startswith('OLYMPUS'):
-            self.dump_ifd(note.field_offset + 8, 'MakerNote', tag_dict=makernote.olympus.TAGS)
+            self.makernote = MakerNote(
+                self.file_handle,
+                'MakerNote',
+                self.parent_offset,
+                note.field_offset + 8,
+                self.endian,
+                self.fake_exif,
+                makernote.olympus.TAGS,
+                False,
+                self.strict,
+                self.detailed,
+                self.truncate_tags
+            )
+            return
+
             # TODO
             #for i in (('MakerNote Tag 0x2020', makernote.OLYMPUS_TAG_0x2020),):
             #    self.decode_olympus_tag(self.tags[i[0]].values, i[1])
@@ -502,40 +516,80 @@ class Ifd(IfdBase):
 
         # Casio
         if 'CASIO' in make or 'Casio' in make:
-            self.dump_ifd(note.field_offset, 'MakerNote',
-                          tag_dict=makernote.casio.TAGS)
+            self.makernote = MakerNote(
+                self.file_handle,
+                'MakerNote',
+                self.parent_offset,
+                note.field_offset,
+                self.endian,
+                self.fake_exif,
+                makernote.casio.TAGS,
+                False,
+                self.strict,
+                self.detailed,
+                self.truncate_tags
+            )
             return
 
         # Fujifilm
         if make == 'FUJIFILM':
-            # bug: everything else is "Motorola" endian, but the MakerNote
-            # is "Intel" endian
-            endian = self.endian
-            self.endian = 'I'
-            # bug: IFD offsets are from beginning of MakerNote, not
-            # beginning of file header
-            offset = self.parent_offset
-            self.parent_offset += note.field_offset
-            # process note with bogus values (note is actually at offset 12)
-            self.dump_ifd(12, 'MakerNote', tag_dict=makernote.fujifilm.TAGS)
-            # reset to correct values
-            self.endian = endian
-            self.parent_offset = offset
+            # IFD offsets are from beginning of MakerNote, not beginning of
+            # file header
+            parent_offset = self.parent_offset + note.field_offset
+            # everything else is "Motorola" endian, but the MakerNote is
+            # "Intel" endian
+            endian = 'I'
+            self.makernote = MakerNote(
+                self.file_handle,
+                'MakerNote',
+                parent_offset,
+                12,
+                endian,
+                self.fake_exif,
+                makernote.fujifilm.TAGS,
+                False,
+                self.strict,
+                self.detailed,
+                self.truncate_tags
+            )
             return
 
         # Apple
         if make == 'Apple' and note.values[0:10] == [65, 112, 112, 108, 101, 32, 105, 79, 83, 0]:
-            offset = self.parent_offset
-            self.parent_offset += note.field_offset + 14
-            self.dump_ifd(0, 'MakerNote', tag_dict=makernote.apple.TAGS)
-            self.parent_offset = offset
+            parent_offset = self.parent_offset + note.field_offset + 14
+
+            self.makernote = MakerNote(
+                self.file_handle,
+                'MakerNote',
+                parent_offset,
+                0,
+                self.endian,
+                self.fake_exif,
+                makernote.apple.TAGS,
+                False,
+                self.strict,
+                self.detailed,
+                self.truncate_tags
+            )
             return
 
         # Canon
         if make == 'Canon':
-            self.dump_ifd(note.field_offset, 'MakerNote',
-                          tag_dict=makernote.canon.TAGS)
+            self.makernote = MakerNote(
+                self.file_handle,
+                'MakerNote',
+                self.parent_offset,
+                note.field_offset,
+                self.endian,
+                self.fake_exif,
+                makernote.canon.TAGS,
+                False,
+                self.strict,
+                self.detailed,
+                self.truncate_tags
+            )
 
+            # FIXME: Not sure what's going on here.
             for i in (('MakerNote Tag 0x0001', makernote.canon.CAMERA_SETTINGS),
                       ('MakerNote Tag 0x0002', makernote.canon.FOCAL_LENGTH),
                       ('MakerNote Tag 0x0004', makernote.canon.SHOT_INFO),
