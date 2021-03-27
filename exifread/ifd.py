@@ -37,7 +37,7 @@ class IfdBase:
         self.truncate_tags = truncate_tags
         self.tags = {}  # type: Dict[str, Any]
 
-        self.dump_ifd(self.ifd_offset, self.ifd_name, self.tag_dict, self.relative_tags)
+        self._dump_ifd()
 
     # TODO Decode Olympus MakerNote tag based on offset within tag.
     # def _olympus_decode_tag(self, value, mn_tags):
@@ -173,8 +173,7 @@ class IfdBase:
                 values = ''
         return values
 
-    def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, stop_tag,
-                     relative_tags) -> None:
+    def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, stop_tag, relative_tags) -> None:
         field_type = s2n(self.file_handle, self.parent_offset, entry + 2, 2, self.endian)
 
         # unknown field type
@@ -265,38 +264,29 @@ class IfdBase:
         tag_value = repr(self.tags[tag_name])
         logger.debug(' %s: %s', tag_name, tag_value)
 
-    def dump_ifd(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None,
-                 relative_tags: bool=False, stop_tag: str=DEFAULT_STOP_TAG) -> None:
+    def _dump_ifd(self) -> None:
         """Populate IFD tags."""
-
-        if ifd_offset is None:
-            ifd_offset = self.ifd_offset
-        if ifd_name is None:
-            ifd_name = self.ifd_name
-        if tag_dict is None:
-            tag_dict = self.tag_dict
-
         try:
-            entries = s2n(self.file_handle, self.parent_offset, ifd_offset, 2, self.endian)
+            entries = s2n(self.file_handle, self.parent_offset, self.ifd_offset, 2, self.endian)
         except TypeError:
-            logger.warning('Possibly corrupted IFD: %s', ifd_offset)
+            logger.warning('Possibly corrupted IFD: %s', self.ifd_offset)
             return
 
         for i in range(entries):
             # entry is index of start of this IFD in the file
-            entry = ifd_offset + 2 + 12 * i
+            entry = self.ifd_offset + 2 + 12 * i
             tag = s2n(self.file_handle, self.parent_offset, entry, 2, self.endian)
 
             # get tag name early to avoid errors, help debug
-            tag_entry = tag_dict.get(tag)
+            tag_entry = self.tag_dict.get(tag)
             if tag_entry:
                 tag_name = tag_entry[0]
             else:
                 tag_name = 'Tag 0x%04X' % tag
 
-            self._process_tag(ifd_offset, ifd_name, tag_entry, entry, tag, tag_name, stop_tag, relative_tags)
+            self._process_tag(self.ifd_offset, self.ifd_name, tag_entry, entry, tag, tag_name, DEFAULT_STOP_TAG, self.relative_tags)
 
-            if tag_name == stop_tag:
+            if tag_name == DEFAULT_STOP_TAG:
                 break
 
 
