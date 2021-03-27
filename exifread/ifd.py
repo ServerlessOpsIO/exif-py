@@ -319,6 +319,9 @@ class Ifd(IfdBase):
         self.sub_ifds: List[Optional[SubIfd]] = []
         self._dump_sub_ifds()
 
+        # MakerNotes are not stored in sub_ifds because they're not an actual
+        # SubIFD but a tag in the EXIF SubIFD whose value uses the EXIF
+        # format.
         self.makernote: Union[MakerNote, None] = None
         try:
             self._dump_makernotes()
@@ -328,27 +331,30 @@ class Ifd(IfdBase):
     def _dump_makernotes(self) -> None:
         """
         Decode all the camera-specific MakerNote formats
-
-        Note is the data that comprises this MakerNote.
-        The MakerNote will likely have pointers in it that point to other
-        parts of the file. We'll use self.offset as the starting point for
-        most of those pointers, since they are relative to the beginning
-        of the file.
-        If the MakerNote is in a newer format, it may use relative addressing
-        within the MakerNote. In that case we'll use relative addresses for
-        the pointers.
-        As an aside: it's not just to be annoying that the manufacturers use
-        relative offsets.  It's so that if the makernote has to be moved by the
-        picture software all of the offsets don't have to be adjusted.  Overall,
-        this is probably the right strategy for makernotes, though the spec is
-        ambiguous.
-        The spec does not appear to imagine that makernotes would
-        follow EXIF format internally.  Once they did, it's ambiguous whether
-        the offsets should be from the header at the start of all the EXIF info,
-        or from the header at the start of the makernote.
-
-        TODO: look into splitting this up
         """
+
+        # Note is the data that comprises this MakerNote.
+        # The MakerNote will likely have pointers in it that point to other
+        # parts of the file. We'll use self.offset as the starting point for
+        # most of those pointers, since they are relative to the beginning
+        # of the file.
+        #
+        # If the MakerNote is in a newer format, it may use relative
+        # addressing within the MakerNote. In that case we'll use relative
+        # addresses for the pointers.
+        #
+        # As an aside: it's not just to be annoying that the manufacturers use
+        # relative offsets.  It's so that if the makernote has to be moved by
+        # the picture software all of the offsets don't have to be adjusted.
+        # Overall this is probably the right strategy for makernotes, though
+        # the spec is ambiguous.
+        #
+        # The spec does not appear to imagine that makernotes would follow
+        # EXIF format internally.  Once they did, it's ambiguous whether the
+        # offsets should be from the header at the start of all the EXIF info,
+        # or from the header at the start of the makernote.
+        #
+        # TODO: look into splitting this up
 
         # MakerNote data is actually in the EXIF SubIFD.
         note = None
@@ -579,6 +585,9 @@ class SubIfd(IfdBase):
 class MakerNote(IfdBase):
     """
     A MakerNote
+
+    MakerNotes are not an actual SubIFD but a tag in the EXIF SubIFD whose
+    value follows the EXIF format.
     """
     def __init__(
         self,
