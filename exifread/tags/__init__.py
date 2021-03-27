@@ -25,9 +25,3 @@ FIELD_TYPES = (
     (4, 'L', 'IFD'),
 )
 
-# To ignore when quick processing
-IGNORE_TAGS = (
-    0x02BC,  # XPM
-    0x927C,  # MakerNote Tags
-    0x9286,  # user comment
-)

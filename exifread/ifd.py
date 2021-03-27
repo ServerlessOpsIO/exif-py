@@ -4,7 +4,7 @@ from typing import BinaryIO, Dict, Any, List, Optional, Union
 
 from .exif_log import get_logger
 from .utils import Ratio, determine_type, ord_, s2n
-from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, SUBIFD_TAGS, IFD_TAG_MAP, makernote
+from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
 
 logger = get_logger()
 
@@ -23,7 +23,6 @@ class IfdBase:
         tag_dict: dict,
         relative_tags: bool=False,
         strict: bool=False,
-        detailed: bool=True,
         truncate_tags: bool=True,
     ):
         self.file_handle = file_handle
@@ -37,7 +36,6 @@ class IfdBase:
         self.relative_tags = relative_tags
 
         self.strict = strict
-        self.detailed = detailed
         self.truncate_tags = truncate_tags
         self.tags = {}  # type: Dict[str, Any]
 
@@ -300,10 +298,7 @@ class IfdBase:
             else:
                 tag_name = 'Tag 0x%04X' % tag
 
-            # ignore certain tags for faster processing
-            if not (not self.detailed and tag in IGNORE_TAGS):
-                self._process_tag(ifd_offset, ifd_name, tag_entry, entry, tag, tag_name,
-                                  stop_tag, relative_tags)
+            self._process_tag(ifd_offset, ifd_name, tag_entry, entry, tag, tag_name, stop_tag, relative_tags)
 
             if tag_name == stop_tag:
                 break
@@ -322,7 +317,6 @@ class Ifd(IfdBase):
         endian: str,
         fake_exif: int,
         strict: bool=False,
-        detailed: bool=True,
         truncate_tags: bool=True
     ):
         super().__init__(
@@ -335,7 +329,6 @@ class Ifd(IfdBase):
             IFD_TAG_MAP.get(ifd_name, {}),
             False,
             strict,
-            detailed,
             truncate_tags
         )
 
@@ -405,7 +398,6 @@ class Ifd(IfdBase):
                     makernote.nikon.TAGS_OLD,
                     False,
                     self.strict,
-                    self.detailed,
                     self.truncate_tags
                 )
 
@@ -424,7 +416,6 @@ class Ifd(IfdBase):
                     makernote.nikon.TAGS_NEW,
                     True,
                     self.strict,
-                    self.detailed,
                     self.truncate_tags
                 )
             else:
@@ -440,7 +431,6 @@ class Ifd(IfdBase):
                     makernote.nikon.TAGS_NEW,
                     False,
                     self.strict,
-                    self.detailed,
                     self.truncate_tags
                 )
             return
@@ -457,7 +447,6 @@ class Ifd(IfdBase):
                 makernote.olympus.TAGS,
                 False,
                 self.strict,
-                self.detailed,
                 self.truncate_tags
             )
             return
@@ -479,7 +468,6 @@ class Ifd(IfdBase):
                 makernote.casio.TAGS,
                 False,
                 self.strict,
-                self.detailed,
                 self.truncate_tags
             )
             return
@@ -502,7 +490,6 @@ class Ifd(IfdBase):
                 makernote.fujifilm.TAGS,
                 False,
                 self.strict,
-                self.detailed,
                 self.truncate_tags
             )
             return
@@ -521,7 +508,6 @@ class Ifd(IfdBase):
                 makernote.apple.TAGS,
                 False,
                 self.strict,
-                self.detailed,
                 self.truncate_tags
             )
             return
@@ -538,7 +524,6 @@ class Ifd(IfdBase):
                 makernote.canon.TAGS,
                 False,
                 self.strict,
-                self.detailed,
                 self.truncate_tags
             )
 
@@ -578,7 +563,6 @@ class Ifd(IfdBase):
                                 self.fake_exif,
                                 self,
                                 self.strict,
-                                self.detailed,
                                 self.truncate_tags
                             )
                         )
@@ -600,7 +584,6 @@ class SubIfd(IfdBase):
         fake_exif: int,
         parent_ifd: Ifd,
         strict: bool=False,
-        detailed: bool=True,
         truncate_tags: bool=True
     ):
         super().__init__(
@@ -613,7 +596,6 @@ class SubIfd(IfdBase):
             IFD_TAG_MAP.get(ifd_name, {}),
             False,
             strict,
-            detailed,
             truncate_tags
         )
 
@@ -635,7 +617,6 @@ class MakerNote(IfdBase):
         tag_dict: dict,
         relative_tags: bool=False,
         strict: bool=False,
-        detailed: bool=True,
         truncate_tags: bool=True
     ):
         super().__init__(
@@ -648,7 +629,6 @@ class MakerNote(IfdBase):
             tag_dict,
             relative_tags,
             strict,
-            detailed,
             truncate_tags
         )
 

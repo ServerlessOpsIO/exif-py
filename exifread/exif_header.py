@@ -5,7 +5,7 @@ from typing import BinaryIO, Dict, Any, List, Optional, Union
 from .exif_log import get_logger
 from .ifd import Ifd, IfdTag
 from .utils import Ratio, determine_type, ord_, n2b, s2n
-from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, IGNORE_TAGS, SUBIFD_TAGS, IFD_TAG_MAP, makernote
+from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
 
 logger = get_logger()
 
@@ -13,7 +13,7 @@ class ExifHeader:
     """
     Handle an EXIF header.
     """
-    def __init__(self, file_handle: BinaryIO, strict: bool, detailed=True, truncate_tags=True):
+    def __init__(self, file_handle: BinaryIO, strict: bool, truncate_tags=True):
         self.file_handle = file_handle
 
         # FIXME: Can we deimplify this?
@@ -23,7 +23,6 @@ class ExifHeader:
         self.fake_exif = fake_exif
 
         self.strict = strict
-        self.detailed = detailed
         self.truncate_tags = truncate_tags
         # TODO: get rid of 'Any' type
         self.tags = {}  # type: Dict[str, Any]
@@ -142,8 +141,7 @@ class ExifHeader:
             elif ctr == 1:
                 ifd_name = 'Thumbnail'
             ifd = Ifd(self.file_handle, ifd_name, self.offset, ifd_offset,
-                      self.endian, self.fake_exif, self.strict, self.detailed,
-                      self.truncate_tags)
+                      self.endian, self.fake_exif, self.strict, self.truncate_tags)
             ifds.append(ifd)
             ctr += 1
         return ifds
