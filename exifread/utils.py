@@ -281,6 +281,51 @@ def get_gps_coords(tags: dict) -> tuple:
     return (lat_coord, lng_coord)
 
 
+def n2b(offset, length, endian) -> bytes:
+    """Convert offset to bytes."""
+    s = b''
+    for _ in range(length):
+        if endian == 'I':
+            s += bytes([offset & 0xFF])
+        else:
+            s = bytes([offset & 0xFF]) + s
+        offset = offset >> 8
+    return s
+
+
+def s2n(fh, initial_offset, offset, length: int, endian, signed=False) -> int:
+    """
+    Convert slice to integer, based on sign and endian flags.
+
+    Usually this offset is assumed to be relative to the beginning of the
+    start of the EXIF information.
+    For some cameras that use relative tags, this offset may be relative
+    to some other starting point.
+    """
+    # Little-endian if Intel, big-endian if Motorola
+    fmt = '<' if endian == 'I' else '>'
+    # Construct a format string from the requested length and signedness;
+    # raise a ValueError if length is something silly like 3
+    try:
+        fmt += {
+            (1, False): 'B',
+            (1, True):  'b',
+            (2, False): 'H',
+            (2, True):  'h',
+            (4, False): 'I',
+            (4, True):  'i',
+            (8, False): 'L',
+            (8, True):  'l',
+            }[(length, signed)]
+    except KeyError:
+        raise ValueError('unexpected unpacking length: %d' % length)
+    fh.seek(initial_offset + offset)
+    buf = fh.read(length)
+    if buf:
+        return struct.unpack(fmt, buf)[0]
+    return 0
+
+
 class Ratio(Fraction):
     """
     Ratio object that eventually will be able to reduce itself to lowest
