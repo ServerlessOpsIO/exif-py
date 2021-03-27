@@ -522,6 +522,7 @@ class Ifd(IfdBase):
 
     def _dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate SubIFDs."""
+        self.sub_ifds = []
         for t in SUBIFD_TAGS:
             tag_entry = SUBIFD_TAGS.get(t)
             tag = self.tags.get(t)
