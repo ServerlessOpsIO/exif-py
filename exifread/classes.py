@@ -471,9 +471,6 @@ class Ifd(IfdBase):
                     self.detailed,
                     self.truncate_tags
                 )
-                # Why does using self.parent_offset + 28 make below work?
-                #self.dump_ifd(note.field_offset + 10 + 8, 'MakerNote',
-                #              tag_dict=makernote.nikon.TAGS_NEW, relative_tags=True)
             else:
                 # E99x or D1
                 logger.debug('Looks like an unlabeled type 2 Nikon MakerNote')
