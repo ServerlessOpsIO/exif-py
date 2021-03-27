@@ -161,4 +161,4 @@ class ExifHeader:
         for line in pretty.splitlines():
             if line.strip():
                 cleaned.append(line)
-        self.tags['Image ApplicationNotes'] = IfdTag('\n'.join(cleaned), 0, 1, xmp_bytes, 0, 0)
+        self.tags['Image ApplicationNotes'] = IfdTag(0, 1, '\n'.join(cleaned), 0, 0)

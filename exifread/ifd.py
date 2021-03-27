@@ -1,6 +1,6 @@
 import re
 import struct
-from typing import BinaryIO, Dict, Any, List, Optional, Union
+from typing import Any, BinaryIO, Dict, Any, List, Optional, Union
 
 from .exif_log import get_logger
 from .utils import Ratio, determine_type, ord_, s2n
@@ -62,7 +62,7 @@ class IfdBase:
 
             # It's not a real IFD Tag but we fake one to make everybody happy.
             # This will have a "proprietary" type
-            self.tags['MakerNote ' + name] = IfdTag(str(val), 0, 0, val, 0, 0)
+            self.tags['MakerNote ' + name] = IfdTag(0, 0, val, 0, 0)
 
     def _canon_decode_camera_info(self, camera_info_tag):
         """
@@ -104,7 +104,7 @@ class IfdBase:
                     tag_value = tag[2].get(tag_value, tag_value)
             logger.debug(" %s %s", tag_name, tag_value)
 
-            self.tags['MakerNote ' + tag_name] = IfdTag(str(tag_value), 0, 0, tag_value, 0, 0)
+            self.tags['MakerNote ' + tag_name] = IfdTag(0, 0, tag_value, 0, 0)
 
     def _process_field(self, tag_name, count, field_type, type_length, offset):
         values = []
@@ -181,14 +181,14 @@ class IfdBase:
             return
 
         type_length = FIELD_TYPES[field_type][0]
-        count = s2n(self.file_handle, self.parent_offset, entry + 4, 4, self.endian)
+        field_length = s2n(self.file_handle, self.parent_offset, entry + 4, 4, self.endian)
         # Adjust for tag id/type/count (2+2+4 bytes)
         # Now we point at either the data or the 2nd level offset
         offset = entry + 8
 
         # If the value fits in 4 bytes, it is inlined, else we
         # need to jump ahead again.
-        if count * type_length > 4:
+        if field_length * type_length > 4:
             # offset is not the value; it's a pointer to the value
             # if relative we set things up so s2n will seek to the right
             # place when it adds self.offset.  Note that this 'relative'
@@ -206,60 +206,12 @@ class IfdBase:
         field_offset = offset
         values = None
         if field_type == 2:
-            values = self._process_field2(ifd_name, tag_name, count, offset)
+            values = self._process_field2(ifd_name, tag_name, field_length, offset)
         else:
-            values = self._process_field(tag_name, count, field_type, type_length, offset)
-
-        # now 'values' is either a string or an array
-        # TODO: use only one type
-        if count == 1 and field_type != 2:
-            printable = str(values[0])
-        elif count > 50 and len(values) > 20 and not isinstance(values, str):
-            if self.truncate_tags:
-                printable = str(values[0:20])[0:-1] + ', ... ]'
-            else:
-                printable = str(values[0:-1])
-        else:
-            printable = str(values)
-
-        # compute printable version of values
-        if tag_entry:
-            # optional 2nd tag element is present
-            if len(tag_entry) != 1:
-                if callable(tag_entry[1]):
-                    # call mapping function
-                    printable = tag_entry[1](values)
-
-                elif isinstance(values, list):
-                    # A list can be a list of the same type of value or a list of values with a
-                    # different meaning by position.
-
-                    pretty_values = []
-                    if isinstance(tag_entry[1], list):
-                        for _i in range(len(values)):
-                            pretty_values.append(tag_entry[1][_i].get(values[_i], repr(values[_i])))
-                    else:
-                        for val in values:
-                            pretty_values.append(tag_entry[1].get(val, repr(val)))
-
-                    # FIXME: with the exception of ASCII fields `values` will always be a list.
-                    # We have no way of knowing if the field is a single value or list of
-                    # values. Also not sure if we know the difference between an empty list and
-                    # an empty field value. We just do our best here.
-                    if len(pretty_values) > 1:
-                        printable = str(pretty_values)
-                    elif len(pretty_values) == 1:
-                        printable = str(pretty_values[0])
-                    else:
-                        printable = ''
-
-                else:
-                    # NOTE: We shouldn't make it here. This would mean we received an ASCII
-                    # value to be used in a lookup table it is possible.
-                    printable = tag_entry[1].get(val, repr(values))
+            values = self._process_field(tag_name, field_length, field_type, type_length, offset)
 
         self.tags[tag_name] = IfdTag(
-            printable, tag, field_type, values, field_offset, count * type_length
+            tag, field_type, values, field_offset, field_length * type_length, tag_entry, self.truncate_tags
         )
         tag_value = repr(self.tags[tag_name])
         logger.debug(' %s: %s', tag_name, tag_value)
@@ -316,7 +268,7 @@ class Ifd(IfdBase):
             truncate_tags
         )
 
-        self.sub_ifds: List[Optional[SubIfd]] = []
+        self._sub_ifds: List[Optional[SubIfd]] = []
         self._dump_sub_ifds()
 
         # MakerNotes are not stored in sub_ifds because they're not an actual
@@ -621,10 +573,16 @@ class IfdTag:
     """
     Eases dealing with tags.
     """
-    def __init__(self, printable: str, tag: int, field_type: int, values,
-                 field_offset: int, field_length: int):
-        # printable version of data
-        self.printable = printable
+    def __init__(
+        self,
+        tag: int,
+        field_type: int,
+        values: Any,
+        field_offset: int,
+        field_length: int,
+        tag_entry: Any=None,
+        truncate_tags: bool=True
+    ):
         # tag ID number
         self.tag = tag
         # field type as index into FIELD_TYPES
@@ -636,6 +594,9 @@ class IfdTag:
         # either string, bytes or list of data items
         # TODO: sort out this type mess!
         self.values = values
+
+        self.tag_entry = tag_entry
+        self.truncate_tags = truncate_tags
 
     def __str__(self) -> str:
         return self.printable
@@ -656,6 +617,61 @@ class IfdTag:
                 str(self.field_offset)
             )
         return tag
+
+    @property
+    def printable(self):
+        """
+        Printable representation of tag.
+        """
+        # now 'values' is either a string or an array
+        # TODO: use only one type
+        if self.field_length == 1 and self.field_type != 2:
+            printable = str(self.values[0])
+        elif self.field_length > 50 and len(self.values) > 20 and not isinstance(self.values, str):
+            if self.truncate_tags:
+                printable = str(self.values[0:20])[0:-1] + ', ... ]'
+            else:
+                printable = str(self.values[0:-1])
+        else:
+            printable = str(self.values)
+
+        # compute printable version of values
+        if self.tag_entry:
+            # optional 2nd tag element is present
+            if len(self.tag_entry) != 1:
+                if callable(self.tag_entry[1]):
+                    # call mapping function
+                    printable = self.tag_entry[1](self.values)
+
+                elif isinstance(self.values, list):
+                    # A list can be a list of the same type of value or a list of values with a
+                    # different meaning by position.
+
+                    pretty_values = []
+                    if isinstance(self.tag_entry[1], list):
+                        for _i in range(len(self.values)):
+                            pretty_values.append(self.tag_entry[1][_i].get(self.values[_i], repr(self.values[_i])))
+                    else:
+                        for val in self.values:
+                            pretty_values.append(self.tag_entry[1].get(val, repr(val)))
+
+                    # FIXME: with the exception of ASCII fields `values` will always be a list.
+                    # We have no way of knowing if the field is a single value or list of
+                    # values. Also not sure if we know the difference between an empty list and
+                    # an empty field value. We just do our best here.
+                    if len(pretty_values) > 1:
+                        printable = str(pretty_values)
+                    elif len(pretty_values) == 1:
+                        printable = str(pretty_values[0])
+                    else:
+                        printable = ''
+
+                else:
+                    # NOTE: We shouldn't make it here. This would mean we received an ASCII
+                    # value to be used in a lookup table it is possible.
+                    printable = self.tag_entry[1].get(val, repr(self.values))
+
+        return printable
 
 
 class IfdTagValue:
