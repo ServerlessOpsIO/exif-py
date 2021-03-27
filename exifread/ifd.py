@@ -317,15 +317,15 @@ class Ifd(IfdBase):
         )
 
         self.sub_ifds: List[Optional[SubIfd]] = []
-        self.dump_sub_ifds()
+        self._dump_sub_ifds()
 
         self.makernote: Union[MakerNote, None] = None
         try:
-            self.dump_makernotes()
+            self._dump_makernotes()
         except ValueError:
             logger.debug('MakerNote data not found.')
 
-    def dump_makernotes(self) -> None:
+    def _dump_makernotes(self) -> None:
         """
         Decode all the camera-specific MakerNote formats
 
@@ -520,7 +520,7 @@ class Ifd(IfdBase):
                 del self.tags[makernote.canon.CAMERA_INFO_TAG_NAME]
             return
 
-    def dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
+    def _dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate SubIFDs."""
         for t in SUBIFD_TAGS:
             tag_entry = SUBIFD_TAGS.get(t)
