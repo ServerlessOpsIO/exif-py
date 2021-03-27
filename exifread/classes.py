@@ -1,6 +1,6 @@
 import re
 import struct
-from typing import BinaryIO, Dict, Any, List, Optional
+from typing import BinaryIO, Dict, Any, List, Optional, Union
 
 from .exif_log import get_logger
 from .utils import Ratio, determine_type, ord_
@@ -64,9 +64,11 @@ class IfdBase:
         ifd_offset: int,
         endian: str,
         fake_exif: int,
+        tag_dict: dict,
+        relative_tags: bool=False,
         strict: bool=False,
         detailed: bool=True,
-        truncate_tags: bool=True
+        truncate_tags: bool=True,
     ):
         self.file_handle = file_handle
         self.ifd_name = ifd_name
@@ -75,15 +77,15 @@ class IfdBase:
         self.ifd_offset = ifd_offset
         self.endian = endian
         self.fake_exif = fake_exif
+        self.tag_dict = tag_dict
+        self.relative_tags = relative_tags
 
         self.strict = strict
         self.detailed = detailed
         self.truncate_tags = truncate_tags
         self.tags = {}  # type: Dict[str, Any]
-        self.relative_tags = False
-        self.tag_dict = IFD_TAG_MAP.get(self.ifd_name, {})
 
-        self.dump_ifd()
+        self.dump_ifd(self.ifd_offset, self.ifd_name, self.tag_dict, self.relative_tags)
 
     # TODO Decode Olympus MakerNote tag based on offset within tag.
     # def _olympus_decode_tag(self, value, mn_tags):
@@ -219,7 +221,8 @@ class IfdBase:
                 values = ''
         return values
 
-    def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, stop_tag) -> None:
+    def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, stop_tag,
+                     relative_tags) -> None:
         field_type = s2n(self.file_handle, self.parent_offset, entry + 2, 2, self.endian)
 
         # unknown field type
@@ -243,7 +246,7 @@ class IfdBase:
             # is for the Nikon type 3 makernote.  Other cameras may use
             # other relative offsets, which would have to be computed here
             # slightly differently.
-            if self.relative_tags:
+            if relative_tags:
                 tmp_offset = s2n(self.file_handle, self.parent_offset, offset, 4, self.endian)
                 offset = tmp_offset + ifd - 8
                 if self.fake_exif:
@@ -312,7 +315,8 @@ class IfdBase:
         tag_value = repr(self.tags[tag_name])
         logger.debug(' %s: %s', tag_name, tag_value)
 
-    def dump_ifd(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
+    def dump_ifd(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None,
+                 relative_tags: bool=False, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate IFD tags."""
 
         if ifd_offset is None:
@@ -342,7 +346,8 @@ class IfdBase:
 
             # ignore certain tags for faster processing
             if not (not self.detailed and tag in IGNORE_TAGS):
-                self._process_tag(ifd_offset, ifd_name, tag_entry, entry, tag, tag_name, stop_tag)
+                self._process_tag(ifd_offset, ifd_name, tag_entry, entry, tag, tag_name,
+                                  stop_tag, relative_tags)
 
             if tag_name == stop_tag:
                 break
@@ -371,6 +376,8 @@ class Ifd(IfdBase):
             ifd_offset,
             endian,
             fake_exif,
+            IFD_TAG_MAP.get(ifd_name, {}),
+            False,
             strict,
             detailed,
             truncate_tags
@@ -378,6 +385,12 @@ class Ifd(IfdBase):
 
         self.sub_ifds: List[Optional[SubIfd]] = []
         self.dump_sub_ifds()
+
+        self.makernote: Union[MakerNote, None] = None
+        try:
+            self.dump_makernotes()
+        except ValueError:
+            logger.debug('MakerNote data not found.')
 
     def dump_makernotes(self) -> None:
         """
@@ -403,11 +416,20 @@ class Ifd(IfdBase):
 
         TODO: look into splitting this up
         """
-        note = self.tags['EXIF MakerNote']
+
+        # MakerNote data is actually in the EXIF SubIFD.
+        note = None
+        for ifd in self.sub_ifds:
+            if ifd.ifd_name == 'EXIF':
+                note = ifd.tags['MakerNote']
+                break
+
+        if note is None:
+            raise ValueError('No MakerNotes.')
 
         # Some apps use MakerNote tags but do not use a format for which we
         # have a description, so just do a raw dump for these.
-        make = self.tags['Image Make'].printable
+        make = self.tags['Make'].printable
 
         # Nikon
         # The maker note usually starts with the word Nikon, followed by the
@@ -417,20 +439,57 @@ class Ifd(IfdBase):
         if 'NIKON' in make:
             if note.values[0:7] == [78, 105, 107, 111, 110, 0, 1]:
                 logger.debug('Looks like a type 1 Nikon MakerNote.')
-                self.dump_ifd(note.field_offset + 8, 'MakerNote',
-                              tag_dict=makernote.nikon.TAGS_OLD)
+                self.makernote = MakerNote(
+                    self.file_handle,
+                    'MakerNote',
+                    self.parent_offset,
+                    note.field_offset + 8,
+                    self.endian,
+                    self.fake_exif,
+                    makernote.nikon.TAGS_OLD,
+                    False,
+                    self.strict,
+                    self.detailed,
+                    self.truncate_tags
+                )
+
             elif note.values[0:7] == [78, 105, 107, 111, 110, 0, 2]:
                 logger.debug('Looks like a labeled type 2 Nikon MakerNote')
                 if note.values[12:14] != [0, 42] and note.values[12:14] != [42, 0]:
                     raise ValueError('Missing marker tag 42 in MakerNote.')
                     # skip the Makernote label and the TIFF header
-                self.dump_ifd(note.field_offset + 10 + 8, 'MakerNote',
-                              tag_dict=makernote.nikon.TAGS_NEW, relative=1)
+                self.makernote = MakerNote(
+                    self.file_handle,
+                    'MakerNote',
+                    0,
+                    note.field_offset + 10 + 8,
+                    self.endian,
+                    self.fake_exif,
+                    makernote.nikon.TAGS_NEW,
+                    True,
+                    self.strict,
+                    self.detailed,
+                    self.truncate_tags
+                )
+                # Why does using self.parent_offset + 28 make below work?
+                #self.dump_ifd(note.field_offset + 10 + 8, 'MakerNote',
+                #              tag_dict=makernote.nikon.TAGS_NEW, relative_tags=True)
             else:
                 # E99x or D1
                 logger.debug('Looks like an unlabeled type 2 Nikon MakerNote')
-                self.dump_ifd(note.field_offset, 'MakerNote',
-                              tag_dict=makernote.nikon.TAGS_NEW)
+                self.makernote = MakerNote(
+                    self.file_handle,
+                    'MakerNote',
+                    self.parent_offset,
+                    note.field_offset,
+                    self.endian,
+                    self.fake_exif,
+                    makernote.nikon.TAGS_NEW,
+                    False,
+                    self.strict,
+                    self.detailed,
+                    self.truncate_tags
+                )
             return
 
         # Olympus
@@ -544,12 +603,50 @@ class SubIfd(IfdBase):
             ifd_offset,
             endian,
             fake_exif,
+            IFD_TAG_MAP.get(ifd_name, {}),
+            False,
             strict,
             detailed,
             truncate_tags
         )
 
         self.parent_ifd = parent_ifd
+
+
+class MakerNote(IfdBase):
+    """
+    A MakerNote
+    """
+    def __init__(
+        self,
+        file_handle: BinaryIO,
+        ifd_name: str,
+        parent_offset: int,
+        ifd_offset: int,
+        endian: str,
+        fake_exif: int,
+        tag_dict: dict,
+        relative_tags: bool=False,
+        strict: bool=False,
+        detailed: bool=True,
+        truncate_tags: bool=True
+    ):
+        super().__init__(
+            file_handle,
+            ifd_name,
+            parent_offset,
+            ifd_offset,
+            endian,
+            fake_exif,
+            tag_dict,
+            relative_tags,
+            strict,
+            detailed,
+            truncate_tags
+        )
+
+        self.relative_tags = relative_tags
+        self.tag_dict = tag_dict
 
 
 class IfdTag:
