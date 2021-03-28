@@ -23,15 +23,15 @@ class IfdBase:
         tag_dict: dict,
         relative_tags: bool=False,
     ):
-        self.file_handle = file_handle
         self.file_type = file_type
         self.ifd_name = ifd_name
+        self._parent_offset = parent_offset
+        self._ifd_offset = ifd_offset
+        self._endian = endian
 
-        self.parent_offset = parent_offset
-        self.ifd_offset = ifd_offset
-        self.endian = endian
-        self.tag_dict = tag_dict
-        self.relative_tags = relative_tags
+        self._file_handle = file_handle
+        self._tag_dict = tag_dict
+        self._relative_tags = relative_tags
 
         self.tags = {}  # type: Dict[str, Any]
 
@@ -52,13 +52,13 @@ class IfdBase:
                 if field_type in (5, 10):
                     # a ratio
                     value = Ratio(
-                        s2n(self.file_handle, self.parent_offset, offset, 4, self.endian, signed),
-                        s2n(self.file_handle, self.parent_offset, offset + 4, 4, self.endian, signed)
+                        s2n(self._file_handle, self._parent_offset, offset, 4, self._endian, signed),
+                        s2n(self._file_handle, self._parent_offset, offset + 4, 4, self._endian, signed)
                     )
                 elif field_type in (11, 12):
                     # a float or double
                     unpack_format = ''
-                    if self.endian == 'I':
+                    if self._endian == 'I':
                         unpack_format += '<'
                     else:
                         unpack_format += '>'
@@ -66,32 +66,32 @@ class IfdBase:
                         unpack_format += 'f'
                     else:
                         unpack_format += 'd'
-                    self.file_handle.seek(self.parent_offset + offset)
-                    byte_str = self.file_handle.read(type_length)
+                    self._file_handle.seek(self._parent_offset + offset)
+                    byte_str = self._file_handle.read(type_length)
                     value = struct.unpack(unpack_format, byte_str)
                 else:
-                    value = s2n(self.file_handle, self.parent_offset, offset, type_length, self.endian, signed)
+                    value = s2n(self._file_handle, self._parent_offset, offset, type_length, self._endian, signed)
                 values.append(value)
                 offset = offset + type_length
         # The test above causes problems with tags that are
         # supposed to have long values! Fix up one important case.
         elif tag_name in ('MakerNote', makernote.canon.CAMERA_INFO_TAG_NAME):
             for _ in range(count):
-                value = s2n(self.file_handle, self.parent_offset, offset, type_length, self.endian, signed)
+                value = s2n(self._file_handle, self._parent_offset, offset, type_length, self._endian, signed)
                 values.append(value)
                 offset = offset + type_length
         return values
 
-    def _process_field2(self, ifd_name, tag_name, count, offset):
+    def _process_field2(self, tag_name, count, offset):
         values = ''
         # special case: null-terminated ASCII string
         # XXX investigate
         # sometimes gets too big to fit in int value
         if count != 0:  # and count < (2**31):  # 2E31 is hardware dependent. --gd
-            file_position = self.parent_offset + offset
+            file_position = self._parent_offset + offset
             try:
-                self.file_handle.seek(file_position)
-                values = self.file_handle.read(count)
+                self._file_handle.seek(file_position)
+                values = self._file_handle.read(count)
 
                 # Drop any garbage after a null.
                 values = values.split(b'\x00', 1)[0]
@@ -108,15 +108,15 @@ class IfdBase:
                 values = ''
         return values
 
-    def _process_tag(self, ifd, ifd_name: str, tag_entry, entry, tag: int, tag_name, stop_tag, relative_tags) -> None:
-        field_type = s2n(self.file_handle, self.parent_offset, entry + 2, 2, self.endian)
+    def _process_tag(self, tag_entry, entry, tag: int, tag_name, stop_tag) -> None:
+        field_type = s2n(self._file_handle, self._parent_offset, entry + 2, 2, self._endian)
 
         # unknown field type
         if not 0 < field_type < len(FIELD_TYPES):
             return
 
         type_length = FIELD_TYPES[field_type][0]
-        field_length = s2n(self.file_handle, self.parent_offset, entry + 4, 4, self.endian)
+        field_length = s2n(self._file_handle, self._parent_offset, entry + 4, 4, self._endian)
         # Adjust for tag id/type/count (2+2+4 bytes)
         # Now we point at either the data or the 2nd level offset
         offset = entry + 8
@@ -130,18 +130,18 @@ class IfdBase:
             # is for the Nikon type 3 makernote.  Other cameras may use
             # other relative offsets, which would have to be computed here
             # slightly differently.
-            if relative_tags:
-                tmp_offset = s2n(self.file_handle, self.parent_offset, offset, 4, self.endian)
-                offset = tmp_offset + ifd - 8
+            if self._relative_tags:
+                tmp_offset = s2n(self._file_handle, self._parent_offset, offset, 4, self._endian)
+                offset = tmp_offset + self._ifd_offset - 8
                 if self.file_type == FILE_TYPE_JPEG:
                     offset += 18
             else:
-                offset = s2n(self.file_handle, self.parent_offset, offset, 4, self.endian)
+                offset = s2n(self._file_handle, self._parent_offset, offset, 4, self._endian)
 
         field_offset = offset
         values = None
         if field_type == 2:
-            values = self._process_field2(ifd_name, tag_name, field_length, offset)
+            values = self._process_field2(tag_name, field_length, offset)
         else:
             values = self._process_field(tag_name, field_length, field_type, type_length, offset)
 
@@ -154,24 +154,24 @@ class IfdBase:
     def _dump_ifd(self) -> None:
         """Populate IFD tags."""
         try:
-            entries = s2n(self.file_handle, self.parent_offset, self.ifd_offset, 2, self.endian)
+            entries = s2n(self._file_handle, self._parent_offset, self._ifd_offset, 2, self._endian)
         except TypeError:
-            logger.warning('Possibly corrupted IFD: %s', self.ifd_offset)
+            logger.warning('Possibly corrupted IFD: %s', self._ifd_offset)
             return
 
         for i in range(entries):
             # entry is index of start of this IFD in the file
-            entry = self.ifd_offset + 2 + 12 * i
-            tag = s2n(self.file_handle, self.parent_offset, entry, 2, self.endian)
+            entry = self._ifd_offset + 2 + 12 * i
+            tag = s2n(self._file_handle, self._parent_offset, entry, 2, self._endian)
 
             # get tag name early to avoid errors, help debug
-            tag_entry = self.tag_dict.get(tag)
+            tag_entry = self._tag_dict.get(tag)
             if tag_entry:
                 tag_name = tag_entry[0]
             else:
                 tag_name = 'Tag 0x%04X' % tag
 
-            self._process_tag(self.ifd_offset, self.ifd_name, tag_entry, entry, tag, tag_name, DEFAULT_STOP_TAG, self.relative_tags)
+            self._process_tag(tag_entry, entry, tag, tag_name, DEFAULT_STOP_TAG)
 
             if tag_name == DEFAULT_STOP_TAG:
                 break
@@ -264,12 +264,12 @@ class Ifd(IfdBase):
             if note.values[0:7] == [78, 105, 107, 111, 110, 0, 1]:
                 logger.debug('Looks like a type 1 Nikon MakerNote.')
                 self.makernote = MakerNote(
-                    self.file_handle,
+                    self._file_handle,
                     self.file_type,
                     'MakerNote',
-                    self.parent_offset,
+                    self._parent_offset,
                     note.field_offset + 8,
-                    self.endian,
+                    self._endian,
                     'NIKON',
                     makernote.nikon.TAGS_OLD,
                     False,
@@ -281,12 +281,12 @@ class Ifd(IfdBase):
                     raise ValueError('Missing marker tag 42 in MakerNote.')
                     # skip the Makernote label and the TIFF header
                 self.makernote = MakerNote(
-                    self.file_handle,
+                    self._file_handle,
                     self.file_type,
                     'MakerNote',
                     0,
                     note.field_offset + 10 + 8,
-                    self.endian,
+                    self._endian,
                     'NIKON',
                     makernote.nikon.TAGS_NEW,
                     True,
@@ -295,12 +295,12 @@ class Ifd(IfdBase):
                 # E99x or D1
                 logger.debug('Looks like an unlabeled type 2 Nikon MakerNote')
                 self.makernote = MakerNote(
-                    self.file_handle,
+                    self._file_handle,
                     self.file_type,
                     'MakerNote',
-                    self.parent_offset,
+                    self._parent_offset,
                     note.field_offset,
-                    self.endian,
+                    self._endian,
                     'NIKON',
                     makernote.nikon.TAGS_NEW,
                     False,
@@ -309,12 +309,12 @@ class Ifd(IfdBase):
         # Olympus
         elif make.startswith('OLYMPUS'):
             self.makernote = MakerNote(
-                self.file_handle,
+                self._file_handle,
                 self.file_type,
                 'MakerNote',
-                self.parent_offset,
+                self._parent_offset,
                 note.field_offset + 8,
-                self.endian,
+                self._endian,
                 'OLYMPUS',
                 makernote.olympus.TAGS,
                 False,
@@ -323,12 +323,12 @@ class Ifd(IfdBase):
         # Casio
         elif 'CASIO' in make or 'Casio' in make:
             self.makernote = MakerNote(
-                self.file_handle,
+                self._file_handle,
                 self.file_type,
                 'MakerNote',
-                self.parent_offset,
+                self._parent_offset,
                 note.field_offset,
-                self.endian,
+                self._endian,
                 'CASIO',
                 makernote.casio.TAGS,
                 False,
@@ -338,12 +338,12 @@ class Ifd(IfdBase):
         elif make == 'FUJIFILM':
             # IFD offsets are from beginning of MakerNote, not beginning of
             # file header
-            parent_offset = self.parent_offset + note.field_offset
+            parent_offset = self._parent_offset + note.field_offset
             # everything else is "Motorola" endian, but the MakerNote is
             # "Intel" endian
             endian = 'I'
             self.makernote = MakerNote(
-                self.file_handle,
+                self._file_handle,
                 self.file_type,
                 'MakerNote',
                 parent_offset,
@@ -356,15 +356,15 @@ class Ifd(IfdBase):
 
         # Apple
         elif make == 'Apple' and note.values[0:10] == [65, 112, 112, 108, 101, 32, 105, 79, 83, 0]:
-            parent_offset = self.parent_offset + note.field_offset + 14
+            parent_offset = self._parent_offset + note.field_offset + 14
 
             self.makernote = MakerNote(
-                self.file_handle,
+                self._file_handle,
                 self.file_type,
                 'MakerNote',
                 parent_offset,
                 0,
-                self.endian,
+                self._endian,
                 'APPLE',
                 makernote.apple.TAGS,
                 False,
@@ -373,12 +373,12 @@ class Ifd(IfdBase):
         # Canon
         elif make == 'Canon':
             self.makernote = MakerNote(
-                self.file_handle,
+                self._file_handle,
                 self.file_type,
                 'MakerNote',
-                self.parent_offset,
+                self._parent_offset,
                 note.field_offset,
-                self.endian,
+                self._endian,
                 'CANON',
                 makernote.canon.TAGS,
                 False,
@@ -398,12 +398,12 @@ class Ifd(IfdBase):
                         logger.debug('%s SubIFD at offset %d:', tag_entry[0], value)
                         self._sub_ifds.append(
                             SubIfd(
-                                self.file_handle,
+                                self._file_handle,
                                 self.file_type,
                                 tag_entry[0],
-                                self.parent_offset,
+                                self._parent_offset,
                                 value,
-                                self.endian,
+                                self._endian,
                                 self,
                             )
                         )
@@ -462,7 +462,7 @@ class SubIfd(IfdBase):
             False,
         )
 
-        self.parent_ifd = parent_ifd
+        self._parent_ifd = parent_ifd
 
 
 class MakerNote(IfdBase):
@@ -495,9 +495,8 @@ class MakerNote(IfdBase):
             relative_tags,
         )
 
-        self.relative_tags = relative_tags
+        self._tag_dict = tag_dict
         self.maker_name = maker_name
-        self.tag_dict = tag_dict
 
 
 class IfdTag:

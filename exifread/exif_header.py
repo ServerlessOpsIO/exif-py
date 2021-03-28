@@ -14,9 +14,12 @@ class ExifHeader:
     Handle an EXIF header.
     """
     def __init__(self, file_handle: BinaryIO):
-        self.file_handle = file_handle
+        self._file_handle = file_handle
+        self._offset: int
+        self._endian: str
+        self.file_type: str
 
-        self.file_type, self.offset, self.endian = find_exif(self.file_handle)
+        self.file_type, self._offset, self._endian = find_exif(self._file_handle)
 
         # TODO: get rid of 'Any' type
         # FIXME: tags live with the IFD and not the header
@@ -24,7 +27,7 @@ class ExifHeader:
 
     def _first_ifd(self) -> int:
         """Return first IFD."""
-        return s2n(self.file_handle, self.offset, 4, 4, self.endian)
+        return s2n(self._file_handle, self._offset, 4, 4, self._endian)
 
     def _list_header_ifd_offsets(self) -> List[int]:
         """Return the list of IFDs in the header."""
@@ -37,8 +40,8 @@ class ExifHeader:
 
     def _next_ifd(self, ifd) -> int:
         """Return the pointer to next IFD."""
-        entries = s2n(self.file_handle, self.offset, ifd, 2, self.endian)
-        next_ifd = s2n(self.file_handle, self.offset, ifd + 2 + 12 * entries, 4, self.endian)
+        entries = s2n(self._file_handle, self._offset, ifd, 2, self._endian)
+        next_ifd = s2n(self._file_handle, self._offset, ifd + 2 + 12 * entries, 4, self._endian)
         if next_ifd == ifd:
             return 0
         return next_ifd
@@ -54,24 +57,24 @@ class ExifHeader:
         if not thumb or thumb.printable != 'Uncompressed TIFF':
             return
 
-        entries = s2n(self.file_handle, self.offset, thumb_ifd, 2, self.endian)
+        entries = s2n(self._file_handle, self._offset, thumb_ifd, 2, self._endian)
         # this is header plus offset to IFD ...
-        if self.endian == 'M':
+        if self._endian == 'M':
             tiff = b'MM\x00*\x00\x00\x00\x08'
         else:
             tiff = b'II*\x00\x08\x00\x00\x00'
             # ... plus thumbnail IFD data plus a null "next IFD" pointer
-        self.file_handle.seek(self.offset + thumb_ifd)
-        tiff += self.file_handle.read(entries * 12 + 2) + b'\x00\x00\x00\x00'
+        self._file_handle.seek(self._offset + thumb_ifd)
+        tiff += self._file_handle.read(entries * 12 + 2) + b'\x00\x00\x00\x00'
 
         # fix up large value offset pointers into data area
         for i in range(entries):
             entry = thumb_ifd + 2 + 12 * i
-            tag = s2n(self.file_handle, self.offset, entry, 2, self.endian)
-            field_type = s2n(self.file_handle, self.offset, entry + 2, 2, self.endian)
+            tag = s2n(self._file_handle, self._offset, entry, 2, self._endian)
+            field_type = s2n(self._file_handle, self._offset, entry + 2, 2, self._endian)
             type_length = FIELD_TYPES[field_type][0]
-            count = s2n(self.file_handle, self.offset, entry + 4, 4, self.endian)
-            old_offset = s2n(self.file_handle, self.offset, entry + 8, 4, self.endian)
+            count = s2n(self._file_handle, self._offset, entry + 4, 4, self._endian)
+            old_offset = s2n(self._file_handle, self._offset, entry + 8, 4, self._endian)
             # start of the 4-byte pointer area in entry
             ptr = i * 12 + 18
             # remember strip offsets location
@@ -83,26 +86,26 @@ class ExifHeader:
                 # update offset pointer (nasty "strings are immutable" crap)
                 # should be able to say "tiff[ptr:ptr+4]=newoff"
                 newoff = len(tiff)
-                tiff = tiff[:ptr] + n2b(newoff, 4, self.endian) + tiff[ptr + 4:]
+                tiff = tiff[:ptr] + n2b(newoff, 4, self._endian) + tiff[ptr + 4:]
                 # remember strip offsets location
                 if tag == 0x0111:
                     strip_off = newoff
                     strip_len = 4
                 # get original data and store it
-                self.file_handle.seek(self.offset + old_offset)
-                tiff += self.file_handle.read(count * type_length)
+                self._file_handle.seek(self._offset + old_offset)
+                tiff += self._file_handle.read(count * type_length)
 
         # add pixel strips and update strip offset info
         old_offsets = self.tags['Thumbnail StripOffsets'].values
         old_counts = self.tags['Thumbnail StripByteCounts'].values
         for i, old_offset in enumerate(old_offsets):
             # update offset pointer (more nasty "strings are immutable" crap)
-            offset = n2b(len(tiff), strip_len, self.endian)
+            offset = n2b(len(tiff), strip_len, self._endian)
             tiff = tiff[:strip_off] + offset + tiff[strip_off + strip_len:]
             strip_off += strip_len
             # add pixel strip to end
-            self.file_handle.seek(self.offset + old_offset)
-            tiff += self.file_handle.read(old_counts[i])
+            self._file_handle.seek(self._offset + old_offset)
+            tiff += self._file_handle.read(old_counts[i])
 
         self.tags['TIFFThumbnail'] = tiff
 
@@ -114,17 +117,17 @@ class ExifHeader:
         """
         thumb_offset = self.tags.get('Thumbnail JPEGInterchangeFormat')
         if thumb_offset:
-            self.file_handle.seek(self.offset + thumb_offset.values[0])
+            self._file_handle.seek(self._offset + thumb_offset.values[0])
             size = self.tags['Thumbnail JPEGInterchangeFormatLength'].values[0]
-            self.tags['JPEGThumbnail'] = self.file_handle.read(size)
+            self.tags['JPEGThumbnail'] = self._file_handle.read(size)
 
         # Sometimes in a TIFF file, a JPEG thumbnail is hidden in the MakerNote
         # since it's not allowed in a uncompressed TIFF IFD
         if 'JPEGThumbnail' not in self.tags:
             thumb_offset = self.tags.get('MakerNote JPEGThumbnail')
             if thumb_offset:
-                self.file_handle.seek(self.offset + thumb_offset.values[0])
-                self.tags['JPEGThumbnail'] = self.file_handle.read(thumb_offset.field_length)
+                self._file_handle.seek(self._offset + thumb_offset.values[0])
+                self.tags['JPEGThumbnail'] = self._file_handle.read(thumb_offset.field_length)
 
     def list_ifds(self) -> List[Ifd]:
         """Return the list of IFDs in the header."""
@@ -136,12 +139,12 @@ class ExifHeader:
             elif ctr == 1:
                 ifd_name = 'Thumbnail'
             ifd = Ifd(
-                self.file_handle,
+                self._file_handle,
                 self.file_type,
                 ifd_name,
-                self.offset,
+                self._offset,
                 ifd_offset,
-                self.endian,
+                self._endian,
             )
             ifds.append(ifd)
             ctr += 1
