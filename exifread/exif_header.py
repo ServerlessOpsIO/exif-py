@@ -20,6 +20,7 @@ class ExifHeader:
         self.file_type: str
 
         self.file_type, self._offset, self._endian = find_exif(self._file_handle)
+        self.ifds: List[Ifd] = self._list_ifds()
 
         # TODO: get rid of 'Any' type
         # FIXME: tags live with the IFD and not the header
@@ -36,6 +37,27 @@ class ExifHeader:
         while i:
             ifds.append(i)
             i = self._next_ifd(i)
+        return ifds
+
+    def _list_ifds(self) -> List[Ifd]:
+        """Return the list of IFDs in the header."""
+        ifds = []
+        ctr = 0
+        for ifd_offset in self._list_header_ifd_offsets():
+            if ctr == 0:
+                ifd_name = 'IFD0'
+            elif ctr == 1:
+                ifd_name = 'Thumbnail'
+            ifd = Ifd(
+                self._file_handle,
+                self.file_type,
+                ifd_name,
+                self._offset,
+                ifd_offset,
+                self._endian,
+            )
+            ifds.append(ifd)
+            ctr += 1
         return ifds
 
     def _next_ifd(self, ifd) -> int:
@@ -128,27 +150,6 @@ class ExifHeader:
             if thumb_offset:
                 self._file_handle.seek(self._offset + thumb_offset.values[0])
                 self.tags['JPEGThumbnail'] = self._file_handle.read(thumb_offset.field_length)
-
-    def list_ifds(self) -> List[Ifd]:
-        """Return the list of IFDs in the header."""
-        ifds = []
-        ctr = 0
-        for ifd_offset in self._list_header_ifd_offsets():
-            if ctr == 0:
-                ifd_name = 'IFD0'
-            elif ctr == 1:
-                ifd_name = 'Thumbnail'
-            ifd = Ifd(
-                self._file_handle,
-                self.file_type,
-                ifd_name,
-                self._offset,
-                ifd_offset,
-                self._endian,
-            )
-            ifds.append(ifd)
-            ctr += 1
-        return ifds
 
     def parse_xmp(self, xmp_bytes: bytes):
         """Adobe's Extensible Metadata Platform, just dump the pretty XML."""
