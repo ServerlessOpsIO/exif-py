@@ -42,6 +42,8 @@ class IfdBase:
     # TODO Decode Olympus MakerNote tag based on offset within tag.
     # def _olympus_decode_tag(self, value, mn_tags):
     #     pass
+
+    # FIXME: This should be done in IfdTag
     def _canon_decode_tag(self, value, mn_tags):
         """
         Decode Canon MakerNote tag based on offset within tag.
@@ -64,6 +66,7 @@ class IfdBase:
             # This will have a "proprietary" type
             self.tags['MakerNote ' + name] = IfdTag(0, 0, val, 0, 0)
 
+    # FIXME: This should be done in IfdTag
     def _canon_decode_camera_info(self, camera_info_tag):
         """
         Decode the variable length encoded camera info section.
@@ -337,6 +340,7 @@ class Ifd(IfdBase):
                     note.field_offset + 8,
                     self.endian,
                     self.fake_exif,
+                    'NIKON',
                     makernote.nikon.TAGS_OLD,
                     False,
                     self.truncate_tags
@@ -354,6 +358,7 @@ class Ifd(IfdBase):
                     note.field_offset + 10 + 8,
                     self.endian,
                     self.fake_exif,
+                    'NIKON',
                     makernote.nikon.TAGS_NEW,
                     True,
                     self.truncate_tags
@@ -368,6 +373,7 @@ class Ifd(IfdBase):
                     note.field_offset,
                     self.endian,
                     self.fake_exif,
+                    'NIKON',
                     makernote.nikon.TAGS_NEW,
                     False,
                     self.truncate_tags
@@ -383,6 +389,7 @@ class Ifd(IfdBase):
                 note.field_offset + 8,
                 self.endian,
                 self.fake_exif,
+                'OLYMPUS',
                 makernote.olympus.TAGS,
                 False,
                 self.truncate_tags
@@ -403,6 +410,7 @@ class Ifd(IfdBase):
                 note.field_offset,
                 self.endian,
                 self.fake_exif,
+                'CASIO',
                 makernote.casio.TAGS,
                 False,
                 self.truncate_tags
@@ -424,6 +432,7 @@ class Ifd(IfdBase):
                 12,
                 endian,
                 self.fake_exif,
+                'FUJIFILM',
                 makernote.fujifilm.TAGS,
                 False,
                 self.truncate_tags
@@ -441,6 +450,7 @@ class Ifd(IfdBase):
                 0,
                 self.endian,
                 self.fake_exif,
+                'APPLE',
                 makernote.apple.TAGS,
                 False,
                 self.truncate_tags
@@ -456,6 +466,7 @@ class Ifd(IfdBase):
                 note.field_offset,
                 self.endian,
                 self.fake_exif,
+                'CANON',
                 makernote.canon.TAGS,
                 False,
                 self.truncate_tags
@@ -549,6 +560,7 @@ class MakerNote(IfdBase):
         ifd_offset: int,
         endian: str,
         fake_exif: int,
+        maker_name: str,
         tag_dict: dict,
         relative_tags: bool=False,
         truncate_tags: bool=True
@@ -566,6 +578,7 @@ class MakerNote(IfdBase):
         )
 
         self.relative_tags = relative_tags
+        self.maker_name = maker_name
         self.tag_dict = tag_dict
 
 
