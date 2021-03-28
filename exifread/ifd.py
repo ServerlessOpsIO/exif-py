@@ -37,9 +37,11 @@ class IfdBase:
 
         self._dump_ifd()
 
-    # TODO Decode Olympus MakerNote tag based on offset within tag.
-    # def _olympus_decode_tag(self, value, mn_tags):
-    #     pass
+    def __str__(self) -> str:
+        return '{} @ {}'.format(self.ifd_name, self._ifd_offset)
+
+    def __repr__(self) -> str:
+        return '{} @ {}'.format(self.ifd_name, self._ifd_offset)
 
     def _process_field(self, tag_name, count, field_type, type_length, offset):
         values = []

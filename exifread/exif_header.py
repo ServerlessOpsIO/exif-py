@@ -28,6 +28,12 @@ class ExifHeader:
         # FIXME: tags live with the IFD and not the header
         self.tags = {}  # type: Dict[str, Any]
 
+    def __str__(self) -> str:
+        return '{} EXIF Header @ {}'.format(self.file_type, self._offset)
+
+    def __repr__(self) -> str:
+        return '{} EXIF Header @ {}'.format(self.file_type, self._offset)
+
     def _first_ifd(self) -> int:
         """Return first IFD."""
         return s2n(self._file_handle, self._offset, 4, 4, self._endian)
