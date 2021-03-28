@@ -1,6 +1,8 @@
 import re
 import struct
 from typing import BinaryIO, Dict, Any, List, Optional, Union
+from xml.dom.minidom import parseString
+
 
 from .exif_log import get_logger
 from .ifd import Ifd, IfdTag
@@ -48,6 +50,8 @@ class ExifHeader:
                 ifd_name = 'IFD0'
             elif ctr == 1:
                 ifd_name = 'Thumbnail'
+
+            logger.debug('IFD %d (%s) at offset %s:', ctr, ifd_name, ifd_offset)
             ifd = Ifd(
                 self._file_handle,
                 self.file_type,
@@ -153,18 +157,21 @@ class ExifHeader:
 
     def parse_xmp(self, xmp_bytes: bytes):
         """Adobe's Extensible Metadata Platform, just dump the pretty XML."""
+        xmp_bytes = b''
+        xmp_tag = self.tags.get('Image ApplicationNotes')
+        if xmp_tag:
+            logger.debug('XMP present in Exif')
+            xmp_bytes = bytes(xmp_tag.values)
 
-        import xml.dom.minidom  # pylint: disable=import-outside-toplevel
+        if xmp_bytes:
+            # Pray that it's encoded in UTF-8
+            # TODO: allow user to specifiy encoding
 
-        logger.debug('XMP cleaning data')
+            xmp_string = xmp_bytes.decode('utf-8')
 
-        # Pray that it's encoded in UTF-8
-        # TODO: allow user to specifiy encoding
-        xmp_string = xmp_bytes.decode('utf-8')
-
-        pretty = xml.dom.minidom.parseString(xmp_string).toprettyxml()
-        cleaned = []
-        for line in pretty.splitlines():
-            if line.strip():
-                cleaned.append(line)
-        self.tags['Image ApplicationNotes'] = IfdTag(0, 1, '\n'.join(cleaned), 0, 0)
+            pretty = parseString(xmp_string).toprettyxml()
+            cleaned = []
+            for line in pretty.splitlines():
+                if line.strip():
+                    cleaned.append(line)
+            self.tags['Image ApplicationNotes'] = IfdTag(0, 1, '\n'.join(cleaned), 0, 0)

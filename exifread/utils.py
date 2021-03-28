@@ -214,7 +214,16 @@ def find_exif(fh: BinaryIO) -> Tuple[str, int, str]:
     else:
         # file format not recognized
         raise ExifNotFound("File format not recognized.")
-    return file_type, offset, chr(ord_(endian[0]))
+
+    endian_str = chr(ord_(endian[0]))
+    logger.debug("Endian format is %s (%s)", endian_str, {
+        'I': 'Intel',
+        'M': 'Motorola',
+        '\x01': 'Adobe Ducky',
+        'd': 'XMP/Adobe unknown'
+    }[endian_str])
+
+    return file_type, offset, endian_str
 
 
 def make_string(seq: Union[bytes, list]) -> str:
