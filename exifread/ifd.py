@@ -1,6 +1,6 @@
 import re
 import struct
-from typing import Any, BinaryIO, Dict, Any, List, Optional, Union
+from typing import Any, BinaryIO, Dict, Any, List, Optional, Tuple, Union
 
 from .exif_log import get_logger
 from .utils import Ratio, determine_type, ord_, s2n
@@ -485,36 +485,35 @@ class IfdTag:
         values: Any,
         field_offset: int,
         field_length: int,
-        tag_entry: Any=None,
+        tag_entry: Optional[Tuple[str, Any]]=None,
     ):
-        # tag ID number
-        self.tag = tag
-        # field type as index into FIELD_TYPES
         self.field_type = field_type
-        # offset of start of field in bytes from beginning of IFD
         self.field_offset = field_offset
-        # length of data field in bytes
         self.field_length = field_length
-        # either string, bytes or list of data items
-        # TODO: sort out this type mess!
+        # FIXME: sort out this type mess!
         self.values = values
 
         self.tag_entry = tag_entry
+
+        self.tag_id: str = '0x%04X' % (tag)
+        self.tag_name: Union[str, None] = None
+        if self.tag_entry is not None:
+            self.tag_name = tag_entry[0]
 
     def __str__(self) -> str:
         return self.printable
 
     def __repr__(self) -> str:
         try:
-            tag = '(0x%04X) %s=%s @ %d' % (
-                self.tag,
+            tag = '(%s) %s=%s @ %d' % (
+                self.tag_id,
                 FIELD_TYPES[self.field_type][2],
                 self.printable,
                 self.field_offset
             )
         except TypeError:
             tag = '(%s) %s=%s @ %s' % (
-                str(self.tag),
+                self.tag_id,
                 FIELD_TYPES[self.field_type][2],
                 self.printable,
                 str(self.field_offset)
