@@ -41,72 +41,6 @@ class IfdBase:
     # def _olympus_decode_tag(self, value, mn_tags):
     #     pass
 
-    # FIXME: This should be done in IfdTag
-    def _canon_decode_tag(self, value, mn_tags):
-        """
-        Decode Canon MakerNote tag based on offset within tag.
-
-        See http://www.burren.cx/david/canon.html by David Burren
-        """
-        for i in range(1, len(value)):
-            tag = mn_tags.get(i, ('Unknown', ))
-            name = tag[0]
-            if len(tag) > 1:
-                val = tag[1].get(value[i], 'Unknown')
-            else:
-                val = value[i]
-            try:
-                logger.debug(" %s %s %s", i, name, hex(value[i]))
-            except TypeError:
-                logger.debug(" %s %s %s", i, name, value[i])
-
-            # It's not a real IFD Tag but we fake one to make everybody happy.
-            # This will have a "proprietary" type
-            self.tags['MakerNote ' + name] = IfdTag(0, 0, val, 0, 0)
-
-    # FIXME: This should be done in IfdTag
-    def _canon_decode_camera_info(self, camera_info_tag):
-        """
-        Decode the variable length encoded camera info section.
-        """
-        model = self.tags.get('Image Model', None)
-        if not model:
-            return
-        model = str(model.values)
-
-        camera_info_tags = None
-        for (model_name_re, tag_desc) in makernote.canon.CAMERA_INFO_MODEL_MAP.items():
-            if re.search(model_name_re, model):
-                camera_info_tags = tag_desc
-                break
-        else:
-            return
-
-        # We are assuming here that these are all unsigned bytes (Byte or
-        # Unknown)
-        if camera_info_tag.field_type not in (1, 7):
-            return
-        camera_info = struct.pack('<%dB' % len(camera_info_tag.values), *camera_info_tag.values)
-
-        # Look for each data value and decode it appropriately.
-        for offset, tag in camera_info_tags.items():
-            tag_format = tag[1]
-            tag_size = struct.calcsize(tag_format)
-            if len(camera_info) < offset + tag_size:
-                continue
-            packed_tag_value = camera_info[offset:offset + tag_size]
-            tag_value = struct.unpack(tag_format, packed_tag_value)[0]
-
-            tag_name = tag[0]
-            if len(tag) > 2:
-                if callable(tag[2]):
-                    tag_value = tag[2](tag_value)
-                else:
-                    tag_value = tag[2].get(tag_value, tag_value)
-            logger.debug(" %s %s", tag_name, tag_value)
-
-            self.tags['MakerNote ' + tag_name] = IfdTag(0, 0, tag_value, 0, 0)
-
     def _process_field(self, tag_name, count, field_type, type_length, offset):
         values = []
         signed = (field_type in [6, 8, 9, 10])
@@ -371,10 +305,9 @@ class Ifd(IfdBase):
                     makernote.nikon.TAGS_NEW,
                     False,
                 )
-            return
 
         # Olympus
-        if make.startswith('OLYMPUS'):
+        elif make.startswith('OLYMPUS'):
             self.makernote = MakerNote(
                 self.file_handle,
                 'MakerNote',
@@ -386,15 +319,9 @@ class Ifd(IfdBase):
                 makernote.olympus.TAGS,
                 False,
             )
-            return
-
-            # TODO
-            #for i in (('MakerNote Tag 0x2020', makernote.OLYMPUS_TAG_0x2020),):
-            #    self.decode_olympus_tag(self.tags[i[0]].values, i[1])
-            #return
 
         # Casio
-        if 'CASIO' in make or 'Casio' in make:
+        elif 'CASIO' in make or 'Casio' in make:
             self.makernote = MakerNote(
                 self.file_handle,
                 'MakerNote',
@@ -406,10 +333,9 @@ class Ifd(IfdBase):
                 makernote.casio.TAGS,
                 False,
             )
-            return
 
         # Fujifilm
-        if make == 'FUJIFILM':
+        elif make == 'FUJIFILM':
             # IFD offsets are from beginning of MakerNote, not beginning of
             # file header
             parent_offset = self.parent_offset + note.field_offset
@@ -427,10 +353,9 @@ class Ifd(IfdBase):
                 makernote.fujifilm.TAGS,
                 False,
             )
-            return
 
         # Apple
-        if make == 'Apple' and note.values[0:10] == [65, 112, 112, 108, 101, 32, 105, 79, 83, 0]:
+        elif make == 'Apple' and note.values[0:10] == [65, 112, 112, 108, 101, 32, 105, 79, 83, 0]:
             parent_offset = self.parent_offset + note.field_offset + 14
 
             self.makernote = MakerNote(
@@ -444,10 +369,9 @@ class Ifd(IfdBase):
                 makernote.apple.TAGS,
                 False,
             )
-            return
 
         # Canon
-        if make == 'Canon':
+        elif make == 'Canon':
             self.makernote = MakerNote(
                 self.file_handle,
                 'MakerNote',
@@ -460,22 +384,7 @@ class Ifd(IfdBase):
                 False,
             )
 
-            # FIXME: Not sure what's going on here.
-            for i in (('MakerNote Tag 0x0001', makernote.canon.CAMERA_SETTINGS),
-                      ('MakerNote Tag 0x0002', makernote.canon.FOCAL_LENGTH),
-                      ('MakerNote Tag 0x0004', makernote.canon.SHOT_INFO),
-                      ('MakerNote Tag 0x0026', makernote.canon.AF_INFO_2),
-                      ('MakerNote Tag 0x0093', makernote.canon.FILE_INFO)):
-                if i[0] in self.tags:
-                    logger.debug('Canon %s', i[0])
-                    self._canon_decode_tag(self.tags[i[0]].values, i[1])
-                    del self.tags[i[0]]
-            if makernote.canon.CAMERA_INFO_TAG_NAME in self.tags:
-                tag = self.tags[makernote.canon.CAMERA_INFO_TAG_NAME]
-                logger.debug('Canon CameraInfo')
-                self._canon_decode_camera_info(tag)
-                del self.tags[makernote.canon.CAMERA_INFO_TAG_NAME]
-            return
+        return
 
     def _dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate SubIFDs."""
