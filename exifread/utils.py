@@ -11,6 +11,10 @@ from .exif_log import get_logger
 
 logger = get_logger()
 
+FILE_TYPE_TIFF = 'TIFF'
+FILE_TYPE_JPEG = 'JPEG'
+FILE_TYPE_HEIC = 'HEIC'
+FILE_TYPE_WEBP = 'WEBP'
 
 class InvalidExif(Exception):
     pass
@@ -59,7 +63,7 @@ def find_webp_exif(fh: BinaryIO) -> Tuple[int, bytes]:
     raise ExifNotFound("Webp file does not have exif data.")
 
 
-def find_jpeg_exif(fh: BinaryIO, data, fake_exif) -> Tuple[int, bytes, int]:
+def find_jpeg_exif(fh: BinaryIO, data) -> Tuple[int, bytes]:
     logger.debug("JPEG format recognized data[0:2]=0x%X%X", ord_(data[0]), ord_(data[1]))
     base = 2
     logger.debug("data[2]=0x%X data[3]=0x%X data[6:10]=%s", ord_(data[2]), ord_(data[3]), data[6:10])
@@ -70,7 +74,6 @@ def find_jpeg_exif(fh: BinaryIO, data, fake_exif) -> Tuple[int, bytes, int]:
         # fake an EXIF beginning of file
         # I don't think this is used. --gd
         data = b'\xFF\x00' + fh.read(10)
-        fake_exif = 1
         if base > 2:
             logger.debug(" Added to base")
             base = base + length + 4 - 2
@@ -188,30 +191,30 @@ def find_jpeg_exif(fh: BinaryIO, data, fake_exif) -> Tuple[int, bytes, int]:
         msg = "No EXIF header expected data[2+base]==0xFF and data[6+base:10+base]===Exif (or Duck)"
         msg += "Did get 0x%X and %s" % (ord_(data[2 + base]), data[6 + base:10 + base + 1])
         raise InvalidExif(msg)
-    return offset, endian, fake_exif
+    return offset, endian
 
 
-def determine_type(fh: BinaryIO) -> Tuple[int, bytes, int]:
-    # by default do not fake an EXIF beginning
-    fake_exif = 0
-
+def find_exif(fh: BinaryIO) -> Tuple[str, int, str]:
+    fh.seek(0)
     data = fh.read(12)
     if data[0:2] in [b'II', b'MM']:
-        # it's a TIFF file
+        file_type = FILE_TYPE_TIFF
         offset, endian = find_tiff_exif(fh)
     elif data[4:12] == b'ftypheic':
+        file_type = FILE_TYPE_HEIC
         fh.seek(0)
         heic = HEICExifFinder(fh)
         offset, endian = heic.find_exif()
     elif data[0:4] == b'RIFF' and data[8:12] == b'WEBP':
+        file_type = FILE_TYPE_WEBP
         offset, endian = find_webp_exif(fh)
     elif data[0:2] == b'\xFF\xD8':
-        # it's a JPEG file
-        offset, endian, fake_exif = find_jpeg_exif(fh, data, fake_exif)
+        file_type = FILE_TYPE_JPEG
+        offset, endian = find_jpeg_exif(fh, data)
     else:
         # file format not recognized
         raise ExifNotFound("File format not recognized.")
-    return offset, endian, fake_exif
+    return file_type, offset, chr(ord_(endian[0]))
 
 
 def make_string(seq: Union[bytes, list]) -> str:

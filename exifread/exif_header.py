@@ -4,7 +4,7 @@ from typing import BinaryIO, Dict, Any, List, Optional, Union
 
 from .exif_log import get_logger
 from .ifd import Ifd, IfdTag
-from .utils import Ratio, determine_type, ord_, n2b, s2n
+from .utils import Ratio, find_exif, ord_, n2b, s2n
 from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
 
 logger = get_logger()
@@ -16,11 +16,7 @@ class ExifHeader:
     def __init__(self, file_handle: BinaryIO):
         self.file_handle = file_handle
 
-        # FIXME: Can we deimplify this?
-        offset, endian, fake_exif = determine_type(self.file_handle)
-        self.offset = offset
-        self.endian = chr(ord_(endian[0]))
-        self.fake_exif = fake_exif
+        self.file_type, self.offset, self.endian = find_exif(self.file_handle)
 
         # TODO: get rid of 'Any' type
         self.tags = {}  # type: Dict[str, Any]
@@ -140,11 +136,11 @@ class ExifHeader:
                 ifd_name = 'Thumbnail'
             ifd = Ifd(
                 self.file_handle,
+                self.file_type,
                 ifd_name,
                 self.offset,
                 ifd_offset,
                 self.endian,
-                self.fake_exif
             )
             ifds.append(ifd)
             ctr += 1

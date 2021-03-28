@@ -3,7 +3,7 @@ import struct
 from typing import Any, BinaryIO, Dict, Any, List, Optional, Tuple, Union
 
 from .exif_log import get_logger
-from .utils import Ratio, determine_type, ord_, s2n
+from .utils import Ratio, find_exif, ord_, s2n, FILE_TYPE_JPEG
 from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
 
 logger = get_logger()
@@ -15,21 +15,21 @@ class IfdBase:
     def __init__(
         self,
         file_handle: BinaryIO,
+        file_type: str,
         ifd_name: str,
         parent_offset: int,
         ifd_offset: int,
         endian: str,
-        fake_exif: int,
         tag_dict: dict,
         relative_tags: bool=False,
     ):
         self.file_handle = file_handle
+        self.file_type = file_type
         self.ifd_name = ifd_name
 
         self.parent_offset = parent_offset
         self.ifd_offset = ifd_offset
         self.endian = endian
-        self.fake_exif = fake_exif
         self.tag_dict = tag_dict
         self.relative_tags = relative_tags
 
@@ -133,7 +133,7 @@ class IfdBase:
             if relative_tags:
                 tmp_offset = s2n(self.file_handle, self.parent_offset, offset, 4, self.endian)
                 offset = tmp_offset + ifd - 8
-                if self.fake_exif:
+                if self.file_type == FILE_TYPE_JPEG:
                     offset += 18
             else:
                 offset = s2n(self.file_handle, self.parent_offset, offset, 4, self.endian)
@@ -184,19 +184,19 @@ class Ifd(IfdBase):
     def __init__(
         self,
         file_handle: BinaryIO,
+        file_type: str,
         ifd_name: str,
         parent_offset: int,
         ifd_offset: int,
         endian: str,
-        fake_exif: int,
     ):
         super().__init__(
             file_handle,
+            file_type,
             ifd_name,
             parent_offset,
             ifd_offset,
             endian,
-            fake_exif,
             IFD_TAG_MAP.get(ifd_name, {}),
             False,
         )
@@ -265,11 +265,11 @@ class Ifd(IfdBase):
                 logger.debug('Looks like a type 1 Nikon MakerNote.')
                 self.makernote = MakerNote(
                     self.file_handle,
+                    self.file_type,
                     'MakerNote',
                     self.parent_offset,
                     note.field_offset + 8,
                     self.endian,
-                    self.fake_exif,
                     'NIKON',
                     makernote.nikon.TAGS_OLD,
                     False,
@@ -282,11 +282,11 @@ class Ifd(IfdBase):
                     # skip the Makernote label and the TIFF header
                 self.makernote = MakerNote(
                     self.file_handle,
+                    self.file_type,
                     'MakerNote',
                     0,
                     note.field_offset + 10 + 8,
                     self.endian,
-                    self.fake_exif,
                     'NIKON',
                     makernote.nikon.TAGS_NEW,
                     True,
@@ -296,11 +296,11 @@ class Ifd(IfdBase):
                 logger.debug('Looks like an unlabeled type 2 Nikon MakerNote')
                 self.makernote = MakerNote(
                     self.file_handle,
+                    self.file_type,
                     'MakerNote',
                     self.parent_offset,
                     note.field_offset,
                     self.endian,
-                    self.fake_exif,
                     'NIKON',
                     makernote.nikon.TAGS_NEW,
                     False,
@@ -310,11 +310,11 @@ class Ifd(IfdBase):
         elif make.startswith('OLYMPUS'):
             self.makernote = MakerNote(
                 self.file_handle,
+                self.file_type,
                 'MakerNote',
                 self.parent_offset,
                 note.field_offset + 8,
                 self.endian,
-                self.fake_exif,
                 'OLYMPUS',
                 makernote.olympus.TAGS,
                 False,
@@ -324,11 +324,11 @@ class Ifd(IfdBase):
         elif 'CASIO' in make or 'Casio' in make:
             self.makernote = MakerNote(
                 self.file_handle,
+                self.file_type,
                 'MakerNote',
                 self.parent_offset,
                 note.field_offset,
                 self.endian,
-                self.fake_exif,
                 'CASIO',
                 makernote.casio.TAGS,
                 False,
@@ -344,11 +344,11 @@ class Ifd(IfdBase):
             endian = 'I'
             self.makernote = MakerNote(
                 self.file_handle,
+                self.file_type,
                 'MakerNote',
                 parent_offset,
                 12,
                 endian,
-                self.fake_exif,
                 'FUJIFILM',
                 makernote.fujifilm.TAGS,
                 False,
@@ -360,11 +360,11 @@ class Ifd(IfdBase):
 
             self.makernote = MakerNote(
                 self.file_handle,
+                self.file_type,
                 'MakerNote',
                 parent_offset,
                 0,
                 self.endian,
-                self.fake_exif,
                 'APPLE',
                 makernote.apple.TAGS,
                 False,
@@ -374,11 +374,11 @@ class Ifd(IfdBase):
         elif make == 'Canon':
             self.makernote = MakerNote(
                 self.file_handle,
+                self.file_type,
                 'MakerNote',
                 self.parent_offset,
                 note.field_offset,
                 self.endian,
-                self.fake_exif,
                 'CANON',
                 makernote.canon.TAGS,
                 False,
@@ -399,11 +399,11 @@ class Ifd(IfdBase):
                         self.sub_ifds.append(
                             SubIfd(
                                 self.file_handle,
+                                self.file_type,
                                 tag_entry[0],
                                 self.parent_offset,
                                 value,
                                 self.endian,
-                                self.fake_exif,
                                 self,
                             )
                         )
@@ -418,20 +418,20 @@ class SubIfd(IfdBase):
     def __init__(
         self,
         file_handle: BinaryIO,
+        file_type: str,
         ifd_name: str,
         parent_offset: int,
         ifd_offset: int,
         endian: str,
-        fake_exif: int,
         parent_ifd: Ifd,
     ):
         super().__init__(
             file_handle,
+            file_type,
             ifd_name,
             parent_offset,
             ifd_offset,
             endian,
-            fake_exif,
             IFD_TAG_MAP.get(ifd_name, {}),
             False,
         )
@@ -449,22 +449,22 @@ class MakerNote(IfdBase):
     def __init__(
         self,
         file_handle: BinaryIO,
+        file_type: str,
         ifd_name: str,
         parent_offset: int,
         ifd_offset: int,
         endian: str,
-        fake_exif: int,
         maker_name: str,
         tag_dict: dict,
         relative_tags: bool=False,
     ):
         super().__init__(
             file_handle,
+            file_type,
             ifd_name,
             parent_offset,
             ifd_offset,
             endian,
-            fake_exif,
             tag_dict,
             relative_tags,
         )
