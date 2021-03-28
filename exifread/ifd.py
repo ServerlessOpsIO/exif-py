@@ -243,7 +243,7 @@ class Ifd(IfdBase):
 
         # MakerNote data is actually in the EXIF SubIFD.
         note = None
-        for ifd in self.sub_ifds:
+        for ifd in self._sub_ifds:
             if ifd.ifd_name == 'EXIF':
                 note = ifd.tags['MakerNote']
                 break
@@ -388,7 +388,7 @@ class Ifd(IfdBase):
 
     def _dump_sub_ifds(self, ifd_offset: int=None, ifd_name: str=None, tag_dict: dict=None, stop_tag: str=DEFAULT_STOP_TAG) -> None:
         """Populate SubIFDs."""
-        self.sub_ifds = []
+        self._sub_ifds = []
         for t in SUBIFD_TAGS:
             tag_entry = SUBIFD_TAGS.get(t)
             tag = self.tags.get(t)
@@ -396,7 +396,7 @@ class Ifd(IfdBase):
                 try:
                     for value in tag.values:
                         logger.debug('%s SubIFD at offset %d:', tag_entry[0], value)
-                        self.sub_ifds.append(
+                        self._sub_ifds.append(
                             SubIfd(
                                 self.file_handle,
                                 self.file_type,
@@ -409,6 +409,32 @@ class Ifd(IfdBase):
                         )
                 except IndexError:
                     logger.warning('No values found for %s SubIFD', tag_entry[0])
+
+    @property
+    def exif_ifd(self) -> Union[IfdBase, None]:
+        sub_ifd = None
+        for _ifd in self._sub_ifds:
+            if _ifd.ifd_name == 'EXIF':
+                sub_ifd = _ifd
+                break
+        return sub_ifd
+
+    @property
+    def gps_ifd(self) -> Union[IfdBase, None]:
+        sub_ifd = None
+        for _ifd in self._sub_ifds:
+            if _ifd.ifd_name == 'GPS':
+                sub_ifd = _ifd
+                break
+        return sub_ifd
+
+    @property
+    def sub_ifds(self) -> List[IfdBase]:
+        sub_ifds = []
+        for _ifd in self._sub_ifds:
+            if _ifd.ifd_name == 'SubIFD':
+                sub_ifds.append(_ifd)
+        return sub_ifds
 
 
 class SubIfd(IfdBase):

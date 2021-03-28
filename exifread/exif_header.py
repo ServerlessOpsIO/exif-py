@@ -19,6 +19,7 @@ class ExifHeader:
         self.file_type, self.offset, self.endian = find_exif(self.file_handle)
 
         # TODO: get rid of 'Any' type
+        # FIXME: tags live with the IFD and not the header
         self.tags = {}  # type: Dict[str, Any]
 
     def _first_ifd(self) -> int:
