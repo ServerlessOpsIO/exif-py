@@ -177,6 +177,68 @@ class IfdBase:
                 break
 
 
+class SubIfd(IfdBase):
+    """
+    A SubIfd
+    """
+    def __init__(
+        self,
+        file_handle: BinaryIO,
+        file_type: str,
+        ifd_name: str,
+        parent_offset: int,
+        ifd_offset: int,
+        endian: str,
+        parent_ifd: IfdBase,
+    ):
+        super().__init__(
+            file_handle,
+            file_type,
+            ifd_name,
+            parent_offset,
+            ifd_offset,
+            endian,
+            IFD_TAG_MAP.get(ifd_name, {}),
+            False,
+        )
+
+        self._parent_ifd = parent_ifd
+
+
+class MakerNote(IfdBase):
+    """
+    A MakerNote
+
+    MakerNotes are not an actual SubIFD but a tag in the EXIF SubIFD whose
+    value follows the EXIF format.
+    """
+    def __init__(
+        self,
+        file_handle: BinaryIO,
+        file_type: str,
+        ifd_name: str,
+        parent_offset: int,
+        ifd_offset: int,
+        endian: str,
+        maker_name: str,
+        tag_dict: dict,
+        relative_tags: bool=False,
+    ):
+        super().__init__(
+            file_handle,
+            file_type,
+            ifd_name,
+            parent_offset,
+            ifd_offset,
+            endian,
+            tag_dict,
+            relative_tags,
+        )
+
+        self._tag_dict = tag_dict
+        self.maker_name = maker_name
+
+
 class Ifd(IfdBase):
     """
     An IFD
@@ -201,7 +263,7 @@ class Ifd(IfdBase):
             False,
         )
 
-        self._sub_ifds: List[Optional[SubIfd]] = []
+        self._sub_ifds: List[SubIfd] = []
         self._dump_sub_ifds()
 
         # MakerNotes are not stored in sub_ifds because they're not an actual
@@ -411,7 +473,7 @@ class Ifd(IfdBase):
                     logger.warning('No values found for %s SubIFD', tag_entry[0])
 
     @property
-    def exif_ifd(self) -> Union[IfdBase, None]:
+    def exif_ifd(self) -> Union[SubIfd, None]:
         sub_ifd = None
         for _ifd in self._sub_ifds:
             if _ifd.ifd_name == 'EXIF':
@@ -420,7 +482,7 @@ class Ifd(IfdBase):
         return sub_ifd
 
     @property
-    def gps_ifd(self) -> Union[IfdBase, None]:
+    def gps_ifd(self) -> Union[SubIfd, None]:
         sub_ifd = None
         for _ifd in self._sub_ifds:
             if _ifd.ifd_name == 'GPS':
@@ -429,74 +491,12 @@ class Ifd(IfdBase):
         return sub_ifd
 
     @property
-    def sub_ifds(self) -> List[IfdBase]:
+    def sub_ifds(self) -> List[SubIfd]:
         sub_ifds = []
         for _ifd in self._sub_ifds:
             if _ifd.ifd_name == 'SubIFD':
                 sub_ifds.append(_ifd)
         return sub_ifds
-
-
-class SubIfd(IfdBase):
-    """
-    A SubIfd
-    """
-    def __init__(
-        self,
-        file_handle: BinaryIO,
-        file_type: str,
-        ifd_name: str,
-        parent_offset: int,
-        ifd_offset: int,
-        endian: str,
-        parent_ifd: Ifd,
-    ):
-        super().__init__(
-            file_handle,
-            file_type,
-            ifd_name,
-            parent_offset,
-            ifd_offset,
-            endian,
-            IFD_TAG_MAP.get(ifd_name, {}),
-            False,
-        )
-
-        self._parent_ifd = parent_ifd
-
-
-class MakerNote(IfdBase):
-    """
-    A MakerNote
-
-    MakerNotes are not an actual SubIFD but a tag in the EXIF SubIFD whose
-    value follows the EXIF format.
-    """
-    def __init__(
-        self,
-        file_handle: BinaryIO,
-        file_type: str,
-        ifd_name: str,
-        parent_offset: int,
-        ifd_offset: int,
-        endian: str,
-        maker_name: str,
-        tag_dict: dict,
-        relative_tags: bool=False,
-    ):
-        super().__init__(
-            file_handle,
-            file_type,
-            ifd_name,
-            parent_offset,
-            ifd_offset,
-            endian,
-            tag_dict,
-            relative_tags,
-        )
-
-        self._tag_dict = tag_dict
-        self.maker_name = maker_name
 
 
 class IfdTag:
