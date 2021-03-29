@@ -366,7 +366,7 @@ class Ifd(IfdBase):
             parent_offset,
             ifd_offset,
             endian,
-            IFD_TAG_MAP.get(ifd_name, {}),
+            IFD_TAG_MAP.get('IFD', {}),
             False,
         )
 

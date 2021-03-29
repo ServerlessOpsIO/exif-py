@@ -46,10 +46,7 @@ class ExifHeader:
         ifds = []
         ctr = 0
         for ifd_offset in self._list_header_ifd_offsets():
-            if ctr == 0:
-                ifd_name = 'IFD0'
-            elif ctr == 1:
-                ifd_name = 'Thumbnail'
+            ifd_name = 'IFD' + str(ctr)
 
             logger.debug('IFD %d (%s) at offset %s:', ctr, ifd_name, ifd_offset)
             ifd = Ifd(
@@ -101,7 +98,9 @@ class ExifHeader:
         Take advantage of the pre-existing layout in the thumbnail IFD as
         much as possible
         """
-        thumb = self._tags['Thumbnail']['Compression']
+        # FIXME: Thumbnail no longer exists and we need to itterate through
+        # IFDs, possibly SubIFDs, to find this.
+        thumb = self._tags['IFD1']['Compression']
         if not thumb or thumb.printable != 'Uncompressed TIFF':
             return
 
@@ -144,8 +143,8 @@ class ExifHeader:
                 tiff += self._file_handle.read(count * type_length)
 
         # add pixel strips and update strip offset info
-        old_offsets = self._tags['Thumbnail']['StripOffsets'].values
-        old_counts = self._tags['Thumbnail']['StripByteCounts'].values
+        old_offsets = self._tags['IFD1']['StripOffsets'].values
+        old_counts = self._tags['IFD1']['StripByteCounts'].values
         for i, old_offset in enumerate(old_offsets):
             # update offset pointer (more nasty "strings are immutable" crap)
             offset = n2b(len(tiff), strip_len, self._endian)
@@ -163,10 +162,11 @@ class ExifHeader:
 
         (Thankfully the JPEG data is stored as a unit.)
         """
-        thumb_offset = self._tags['Thumbnail'].get('JPEGInterchangeFormat')
+        # FIXME: Need to move to iterating through IFDs and SubIFDs to find them.
+        thumb_offset = self._tags['IFD1'].get('JPEGInterchangeFormat')
         if thumb_offset:
             self._file_handle.seek(self._offset + thumb_offset.values[0])
-            size = self._tags['Thumbnail']['JPEGInterchangeFormatLength'].values[0]
+            size = self._tags['IFD1']['JPEGInterchangeFormatLength'].values[0]
             self._tags['JPEGThumbnail'] = self._file_handle.read(size)
 
         # Sometimes in a TIFF file, a JPEG thumbnail is hidden in the MakerNote

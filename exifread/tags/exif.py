@@ -456,8 +456,7 @@ EXIF_TAGS: SubIfdTagsType = {
 }
 
 IFD_TAG_MAP: IfdTagMapType = {
-    'IFD0': EXIF_TAGS,
-    'IFD1': EXIF_TAGS,
+    'IFD': EXIF_TAGS,   # Spec says there are IFD{0,1} but have seen more so we drop the number
     'EXIF': EXIF_TAGS,
     'GPS': GPS_TAGS,
     'Interoperability': INTEROP_TAGS,
