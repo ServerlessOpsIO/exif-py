@@ -5,9 +5,6 @@ from typing import BinaryIO
 
 from .exif_log import get_logger
 from .exif_header import ExifHeader
-from .ifd import Ifd
-from .tags import DEFAULT_STOP_TAG
-from .heic import HEICExifFinder
 
 __version__ = '3.0.0'
 

@@ -1,7 +1,7 @@
 """
 Standard tag definitions.
 """
-from typing import Callable, Dict, List, Tuple, Union
+from typing import Callable, Dict, Tuple, Union
 
 from ..utils import make_string, make_string_uc
 

@@ -1,10 +1,9 @@
-import re
 import struct
-from typing import cast, Any, BinaryIO, Dict, Any, List, Optional, Tuple, Union
+from typing import cast, Any, BinaryIO, Dict, List, Optional, Tuple, Union
 
 from .exif_log import get_logger
-from .utils import Ratio, find_exif, ord_, s2n, FILE_TYPE_JPEG
-from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
+from .utils import Ratio, s2n, FILE_TYPE_JPEG
+from .tags import DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
 
 logger = get_logger()
 
@@ -207,7 +206,7 @@ class IfdBase:
                     try:
                         values = values.decode('utf-8')
                     except UnicodeDecodeError:
-                        logger.warning('Possibly corrupted field %s in %s IFD', tag_name, ifd_name)
+                        logger.warning('Possibly corrupted field %s in %s IFD', tag_name, self.ifd_name)
             except OverflowError:
                 logger.warning('OverflowError at position: %s, length: %s', file_position, count)
                 values = ''

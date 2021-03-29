@@ -1,13 +1,11 @@
-import re
-import struct
-from typing import BinaryIO, Dict, Any, List, Optional, Union
+from typing import BinaryIO, Dict, List
 from xml.dom.minidom import parseString
 
 
 from .exif_log import get_logger
 from .ifd import Ifd, IfdTag
-from .utils import Ratio, find_exif, ord_, n2b, s2n
-from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
+from .utils import find_exif, n2b, s2n
+from .tags import FIELD_TYPES
 
 logger = get_logger()
 
