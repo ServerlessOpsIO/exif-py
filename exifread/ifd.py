@@ -1,12 +1,118 @@
 import re
 import struct
-from typing import Any, BinaryIO, Dict, Any, List, Optional, Tuple, Union
+from typing import cast, Any, BinaryIO, Dict, Any, List, Optional, Tuple, Union
 
 from .exif_log import get_logger
 from .utils import Ratio, find_exif, ord_, s2n, FILE_TYPE_JPEG
 from .tags import EXIF_TAGS, DEFAULT_STOP_TAG, FIELD_TYPES, SUBIFD_TAGS, IFD_TAG_MAP, makernote
 
 logger = get_logger()
+
+class IfdTag:
+    """
+    Eases dealing with tags.
+    """
+    def __init__(
+        self,
+        tag: int,
+        field_type: int,
+        values: Any,
+        field_offset: int,
+        field_length: int,
+        tag_entry: Optional[Tuple[str, Any]]=None,
+    ):
+        self.field_type = field_type
+        self.field_offset = field_offset
+        self.field_length = field_length
+        # FIXME: sort out this type mess!
+        self.values = values
+
+        self.tag_entry = tag_entry
+
+        self.tag_id: str = '0x%04X' % (tag)
+        self.tag_name: Union[str, None] = None
+        if self.tag_entry is not None:
+            self.tag_name = cast(Tuple, tag_entry)[0]
+
+    def __str__(self) -> str:
+        return self.printable
+
+    def __repr__(self) -> str:
+        try:
+            tag = '(%s) %s=%s @ %d' % (
+                self.tag_id,
+                FIELD_TYPES[self.field_type][2],
+                self.printable,
+                self.field_offset
+            )
+        except TypeError:
+            tag = '(%s) %s=%s @ %s' % (
+                self.tag_id,
+                FIELD_TYPES[self.field_type][2],
+                self.printable,
+                str(self.field_offset)
+            )
+        return tag
+
+    @property
+    def printable(self):
+        """
+        Printable representation of tag.
+        """
+        # now 'values' is either a string or an array
+        # TODO: use only one type
+        if self.field_length == 1 and self.field_type != 2:
+            printable = str(self.values[0])
+        elif self.field_length > 50 and len(self.values) > 20 and not isinstance(self.values, str):
+            printable = str(self.values[0:-1])
+        else:
+            printable = str(self.values)
+
+        # compute printable version of values
+        if self.tag_entry:
+            # optional 2nd tag element is present
+            if len(self.tag_entry) != 1:
+                if callable(self.tag_entry[1]):
+                    # call mapping function
+                    printable = self.tag_entry[1](self.values)
+
+                elif isinstance(self.values, list):
+                    # A list can be a list of the same type of value or a list of values with a
+                    # different meaning by position.
+
+                    pretty_values = []
+                    if isinstance(self.tag_entry[1], list):
+                        for _i in range(len(self.values)):
+                            pretty_values.append(self.tag_entry[1][_i].get(self.values[_i], repr(self.values[_i])))
+                    else:
+                        for val in self.values:
+                            pretty_values.append(self.tag_entry[1].get(val, repr(val)))
+
+                    # FIXME: with the exception of ASCII fields `values` will always be a list.
+                    # We have no way of knowing if the field is a single value or list of
+                    # values. Also not sure if we know the difference between an empty list and
+                    # an empty field value. We just do our best here.
+                    if len(pretty_values) > 1:
+                        printable = str(pretty_values)
+                    elif len(pretty_values) == 1:
+                        printable = str(pretty_values[0])
+                    else:
+                        printable = ''
+
+                else:
+                    # NOTE: We shouldn't make it here. This would mean we received an ASCII
+                    # value to be used in a lookup table it is possible.
+                    printable = self.tag_entry[1].get(val, repr(self.values))
+
+        return printable
+
+
+class IfdTagValue:
+    """
+    IFD Tag value
+    """
+    pass
+
 
 class IfdBase:
     """
@@ -500,109 +606,26 @@ class Ifd(IfdBase):
                 sub_ifds.append(_ifd)
         return sub_ifds
 
-
-class IfdTag:
-    """
-    Eases dealing with tags.
-    """
-    def __init__(
-        self,
-        tag: int,
-        field_type: int,
-        values: Any,
-        field_offset: int,
-        field_length: int,
-        tag_entry: Optional[Tuple[str, Any]]=None,
-    ):
-        self.field_type = field_type
-        self.field_offset = field_offset
-        self.field_length = field_length
-        # FIXME: sort out this type mess!
-        self.values = values
-
-        self.tag_entry = tag_entry
-
-        self.tag_id: str = '0x%04X' % (tag)
-        self.tag_name: Union[str, None] = None
-        if self.tag_entry is not None:
-            self.tag_name = tag_entry[0]
-
-    def __str__(self) -> str:
-        return self.printable
-
-    def __repr__(self) -> str:
-        try:
-            tag = '(%s) %s=%s @ %d' % (
-                self.tag_id,
-                FIELD_TYPES[self.field_type][2],
-                self.printable,
-                self.field_offset
-            )
-        except TypeError:
-            tag = '(%s) %s=%s @ %s' % (
-                self.tag_id,
-                FIELD_TYPES[self.field_type][2],
-                self.printable,
-                str(self.field_offset)
-            )
-        return tag
-
-    @property
-    def printable(self):
+    def get_tags(self) -> Dict[str, Union[IfdTag, Dict]]:
         """
-        Printable representation of tag.
+        Get tags from IFD and SubIFDs
         """
-        # now 'values' is either a string or an array
-        # TODO: use only one type
-        if self.field_length == 1 and self.field_type != 2:
-            printable = str(self.values[0])
-        elif self.field_length > 50 and len(self.values) > 20 and not isinstance(self.values, str):
-            printable = str(self.values[0:-1])
-        else:
-            printable = str(self.values)
+        tags = self.tags
 
-        # compute printable version of values
-        if self.tag_entry:
-            # optional 2nd tag element is present
-            if len(self.tag_entry) != 1:
-                if callable(self.tag_entry[1]):
-                    # call mapping function
-                    printable = self.tag_entry[1](self.values)
+        sub_ifd_count = 0
+        for _ifd in self.sub_ifds:
+            ifd_name = _ifd.ifd_name + str(sub_ifd_count)
+            tags[ifd_name] = _ifd.tags
+            sub_ifd_count += 1
 
-                elif isinstance(self.values, list):
-                    # A list can be a list of the same type of value or a list of values with a
-                    # different meaning by position.
+        if self.gps_ifd:
+            tags[self.gps_ifd.ifd_name] = self.gps_ifd.tags
 
-                    pretty_values = []
-                    if isinstance(self.tag_entry[1], list):
-                        for _i in range(len(self.values)):
-                            pretty_values.append(self.tag_entry[1][_i].get(self.values[_i], repr(self.values[_i])))
-                    else:
-                        for val in self.values:
-                            pretty_values.append(self.tag_entry[1].get(val, repr(val)))
+        if self.exif_ifd:
+            tags[self.exif_ifd.ifd_name] = self.exif_ifd.tags
 
-                    # FIXME: with the exception of ASCII fields `values` will always be a list.
-                    # We have no way of knowing if the field is a single value or list of
-                    # values. Also not sure if we know the difference between an empty list and
-                    # an empty field value. We just do our best here.
-                    if len(pretty_values) > 1:
-                        printable = str(pretty_values)
-                    elif len(pretty_values) == 1:
-                        printable = str(pretty_values[0])
-                    else:
-                        printable = ''
+        if self.makernote:
+            tags[self.makernote.ifd_name] = self.makernote.tags
 
-                else:
-                    # NOTE: We shouldn't make it here. This would mean we received an ASCII
-                    # value to be used in a lookup table it is possible.
-                    printable = self.tag_entry[1].get(val, repr(self.values))
-
-        return printable
-
-
-class IfdTagValue:
-    """
-    IFD Tag value
-    """
-    pass
+        return tags
 

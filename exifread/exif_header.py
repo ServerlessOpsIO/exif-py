@@ -24,10 +24,6 @@ class ExifHeader:
         self.file_type, self._offset, self._endian = find_exif(self._file_handle)
         self.ifds: List[Ifd] = self._list_ifds()
 
-        # TODO: get rid of 'Any' type
-        # FIXME: tags live with the IFD and not the header
-        self.tags = {}  # type: Dict[str, Any]
-
     def __str__(self) -> str:
         return '{} EXIF Header @ {}'.format(self.file_type, self._offset)
 
@@ -78,6 +74,28 @@ class ExifHeader:
             return 0
         return next_ifd
 
+    @property
+    def _tags(self) -> Dict[str, Dict]:
+        """
+        Private copy of all tags.
+
+        Used for operations required to be done at the EXIF header level.
+        eg. Extracting thumbnails
+        """
+        tags = {}
+        for _ifd in self.ifds:
+            ifd_name = _ifd.ifd_name
+            tags[ifd_name] = _ifd.get_tags()
+
+        return tags
+
+
+    def get_tags(self):
+        """
+        Get all tags from IFDs
+        """
+        return self._tags
+
     def extract_tiff_thumbnail(self, thumb_ifd: int) -> None:
         """
         Extract uncompressed TIFF thumbnail.
@@ -85,7 +103,7 @@ class ExifHeader:
         Take advantage of the pre-existing layout in the thumbnail IFD as
         much as possible
         """
-        thumb = self.tags.get('Thumbnail Compression')
+        thumb = self._tags['Thumbnail']['Compression']
         if not thumb or thumb.printable != 'Uncompressed TIFF':
             return
 
@@ -128,8 +146,8 @@ class ExifHeader:
                 tiff += self._file_handle.read(count * type_length)
 
         # add pixel strips and update strip offset info
-        old_offsets = self.tags['Thumbnail StripOffsets'].values
-        old_counts = self.tags['Thumbnail StripByteCounts'].values
+        old_offsets = self._tags['Thumbnail']['StripOffsets'].values
+        old_counts = self._tags['Thumbnail']['StripByteCounts'].values
         for i, old_offset in enumerate(old_offsets):
             # update offset pointer (more nasty "strings are immutable" crap)
             offset = n2b(len(tiff), strip_len, self._endian)
@@ -139,7 +157,7 @@ class ExifHeader:
             self._file_handle.seek(self._offset + old_offset)
             tiff += self._file_handle.read(old_counts[i])
 
-        self.tags['TIFFThumbnail'] = tiff
+        self._tags['TIFFThumbnail'] = tiff
 
     def extract_jpeg_thumbnail(self) -> None:
         """
@@ -147,24 +165,24 @@ class ExifHeader:
 
         (Thankfully the JPEG data is stored as a unit.)
         """
-        thumb_offset = self.tags.get('Thumbnail JPEGInterchangeFormat')
+        thumb_offset = self._tags['Thumbnail'].get('JPEGInterchangeFormat')
         if thumb_offset:
             self._file_handle.seek(self._offset + thumb_offset.values[0])
-            size = self.tags['Thumbnail JPEGInterchangeFormatLength'].values[0]
-            self.tags['JPEGThumbnail'] = self._file_handle.read(size)
+            size = self._tags['Thumbnail']['JPEGInterchangeFormatLength'].values[0]
+            self._tags['JPEGThumbnail'] = self._file_handle.read(size)
 
         # Sometimes in a TIFF file, a JPEG thumbnail is hidden in the MakerNote
         # since it's not allowed in a uncompressed TIFF IFD
-        if 'JPEGThumbnail' not in self.tags:
-            thumb_offset = self.tags.get('MakerNote JPEGThumbnail')
+        if 'JPEGThumbnail' not in self._tags:
+            thumb_offset = self._tags.get('MakerNote JPEGThumbnail')
             if thumb_offset:
                 self._file_handle.seek(self._offset + thumb_offset.values[0])
-                self.tags['JPEGThumbnail'] = self._file_handle.read(thumb_offset.field_length)
+                self._tags['JPEGThumbnail'] = self._file_handle.read(thumb_offset.field_length)
 
     def parse_xmp(self, xmp_bytes: bytes):
         """Adobe's Extensible Metadata Platform, just dump the pretty XML."""
         xmp_bytes = b''
-        xmp_tag = self.tags.get('Image ApplicationNotes')
+        xmp_tag = self._tags['IFD0']['ApplicationNotes']
         if xmp_tag:
             logger.debug('XMP present in Exif')
             xmp_bytes = bytes(xmp_tag.values)
@@ -180,4 +198,4 @@ class ExifHeader:
             for line in pretty.splitlines():
                 if line.strip():
                     cleaned.append(line)
-            self.tags['Image ApplicationNotes'] = IfdTag(0, 1, '\n'.join(cleaned), 0, 0)
+            self._tags['Image ApplicationNotes'] = IfdTag(0, 1, '\n'.join(cleaned), 0, 0)

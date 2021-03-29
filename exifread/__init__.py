@@ -24,4 +24,4 @@ def process_file(fh: BinaryIO):
     fh.seek(0)
     hdr = ExifHeader(fh)
 
-    return hdr.tags
+    return hdr.get_tags()
