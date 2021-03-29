@@ -177,8 +177,10 @@ class ExifHeader:
                 self._file_handle.seek(self._offset + thumb_offset.values[0])
                 self._tags['JPEGThumbnail'] = self._file_handle.read(thumb_offset.field_length)
 
-    def parse_xmp(self, xmp_bytes: bytes):
+    def parse_xmp(self) -> str:
         """Adobe's Extensible Metadata Platform, just dump the pretty XML."""
+        cleaned_xmp = []
+
         xmp_bytes = b''
         xmp_tag = self._tags['IFD0']['ApplicationNotes']
         if xmp_tag:
@@ -188,12 +190,10 @@ class ExifHeader:
         if xmp_bytes:
             # Pray that it's encoded in UTF-8
             # TODO: allow user to specifiy encoding
-
             xmp_string = xmp_bytes.decode('utf-8')
 
             pretty = parseString(xmp_string).toprettyxml()
-            cleaned = []
             for line in pretty.splitlines():
                 if line.strip():
-                    cleaned.append(line)
-            self._tags['Image ApplicationNotes'] = IfdTag(0, 1, '\n'.join(cleaned), 0, 0)
+                    cleaned_xmp.append(line)
+        return '\n'.join(cleaned_xmp)
