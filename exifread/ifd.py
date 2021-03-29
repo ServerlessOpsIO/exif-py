@@ -414,7 +414,7 @@ class Ifd(IfdBase):
         note = None
         for ifd in self._sub_ifds:
             if ifd.ifd_name == 'EXIF':
-                note = ifd.tags['MakerNote']
+                note = ifd.tags.get('MakerNote')
                 break
 
         if note is None:
