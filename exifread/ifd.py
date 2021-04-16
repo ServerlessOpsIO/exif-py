@@ -129,7 +129,7 @@ class IfdBase:
         relative_tags: bool=False,
     ):
         self.file_type = file_type
-        self.ifd_name = ifd_name
+        self.name = ifd_name
         self._parent_offset = parent_offset
         self.offset = ifd_offset
         self._endian = endian
@@ -143,10 +143,10 @@ class IfdBase:
         self._dump_ifd()
 
     def __str__(self) -> str:
-        return '{} @ {}'.format(self.ifd_name, self.offset)
+        return '{} @ {}'.format(self.name, self.offset)
 
     def __repr__(self) -> str:
-        return '{} @ {}'.format(self.ifd_name, self.offset)
+        return '{} @ {}'.format(self.name, self.offset)
 
     def _process_field(self, tag_name, count, field_type, type_length, offset):
         values = []
@@ -206,7 +206,7 @@ class IfdBase:
                     try:
                         values = values.decode('utf-8')
                     except UnicodeDecodeError:
-                        logger.warning('Possibly corrupted field %s in %s IFD', tag_name, self.ifd_name)
+                        logger.warning('Possibly corrupted field %s in %s IFD', tag_name, self.name)
             except OverflowError:
                 logger.warning('OverflowError at position: %s, length: %s', file_position, count)
                 values = ''
@@ -413,7 +413,7 @@ class Ifd(IfdBase):
         # MakerNote data is actually in the EXIF SubIFD.
         note = None
         for ifd in self._sub_ifds:
-            if ifd.ifd_name == 'EXIF':
+            if ifd.name == 'EXIF':
                 note = ifd.tags.get('MakerNote')
                 break
 
@@ -583,7 +583,7 @@ class Ifd(IfdBase):
     def exif_ifd(self) -> Union[SubIfd, None]:
         sub_ifd = None
         for _ifd in self._sub_ifds:
-            if _ifd.ifd_name == 'EXIF':
+            if _ifd.name == 'EXIF':
                 sub_ifd = _ifd
                 break
         return sub_ifd
@@ -592,7 +592,7 @@ class Ifd(IfdBase):
     def gps_ifd(self) -> Union[SubIfd, None]:
         sub_ifd = None
         for _ifd in self._sub_ifds:
-            if _ifd.ifd_name == 'GPS':
+            if _ifd.name == 'GPS':
                 sub_ifd = _ifd
                 break
         return sub_ifd
@@ -601,7 +601,7 @@ class Ifd(IfdBase):
     def sub_ifds(self) -> List[SubIfd]:
         sub_ifds = []
         for _ifd in self._sub_ifds:
-            if _ifd.ifd_name == 'SubIFD':
+            if _ifd.name == 'SubIFD':
                 sub_ifds.append(_ifd)
         return sub_ifds
 
@@ -613,18 +613,18 @@ class Ifd(IfdBase):
 
         sub_ifd_count = 0
         for _ifd in self.sub_ifds:
-            ifd_name = _ifd.ifd_name + str(sub_ifd_count)
+            ifd_name = _ifd.name + str(sub_ifd_count)
             tags[ifd_name] = _ifd.tags
             sub_ifd_count += 1
 
         if self.gps_ifd:
-            tags[self.gps_ifd.ifd_name] = self.gps_ifd.tags
+            tags[self.gps_ifd.name] = self.gps_ifd.tags
 
         if self.exif_ifd:
-            tags[self.exif_ifd.ifd_name] = self.exif_ifd.tags
+            tags[self.exif_ifd.name] = self.exif_ifd.tags
 
         if self.makernote:
-            tags[self.makernote.ifd_name] = self.makernote.tags
+            tags[self.makernote.name] = self.makernote.tags
 
         return tags
 

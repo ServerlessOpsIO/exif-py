@@ -79,11 +79,10 @@ class ExifHeader:
         """
         tags = {}
         for _ifd in self.ifds:
-            ifd_name = _ifd.ifd_name
+            ifd_name = _ifd.name
             tags[ifd_name] = _ifd.get_tags()
 
         return tags
-
 
     def get_tags(self):
         """
