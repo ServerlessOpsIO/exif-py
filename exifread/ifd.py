@@ -131,7 +131,7 @@ class IfdBase:
         self.file_type = file_type
         self.ifd_name = ifd_name
         self._parent_offset = parent_offset
-        self._ifd_offset = ifd_offset
+        self.offset = ifd_offset
         self._endian = endian
 
         self._file_handle = file_handle
@@ -143,10 +143,10 @@ class IfdBase:
         self._dump_ifd()
 
     def __str__(self) -> str:
-        return '{} @ {}'.format(self.ifd_name, self._ifd_offset)
+        return '{} @ {}'.format(self.ifd_name, self.offset)
 
     def __repr__(self) -> str:
-        return '{} @ {}'.format(self.ifd_name, self._ifd_offset)
+        return '{} @ {}'.format(self.ifd_name, self.offset)
 
     def _process_field(self, tag_name, count, field_type, type_length, offset):
         values = []
@@ -239,7 +239,7 @@ class IfdBase:
             # slightly differently.
             if self._relative_tags:
                 tmp_offset = s2n(self._file_handle, self._parent_offset, offset, 4, self._endian)
-                offset = tmp_offset + self._ifd_offset - 8
+                offset = tmp_offset + self.offset - 8
                 if self.file_type == FILE_TYPE_JPEG:
                     offset += 18
             else:
@@ -261,14 +261,14 @@ class IfdBase:
     def _dump_ifd(self) -> None:
         """Populate IFD tags."""
         try:
-            entries = s2n(self._file_handle, self._parent_offset, self._ifd_offset, 2, self._endian)
+            entries = s2n(self._file_handle, self._parent_offset, self.offset, 2, self._endian)
         except TypeError:
-            logger.warning('Possibly corrupted IFD: %s', self._ifd_offset)
+            logger.warning('Possibly corrupted IFD: %s', self.offset)
             return
 
         for i in range(entries):
             # entry is index of start of this IFD in the file
-            entry = self._ifd_offset + 2 + 12 * i
+            entry = self.offset + 2 + 12 * i
             tag = s2n(self._file_handle, self._parent_offset, entry, 2, self._endian)
 
             # get tag name early to avoid errors, help debug
