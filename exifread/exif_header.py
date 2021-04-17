@@ -1,3 +1,4 @@
+from io import BytesIO
 from typing import BinaryIO, Dict, List
 from xml.dom.minidom import parseString
 
@@ -14,7 +15,7 @@ class ExifHeader:
     Handle an EXIF header.
     """
     def __init__(self, file_handle: BinaryIO):
-        self._file_handle = file_handle
+        self._file_handle = BytesIO(file_handle.read())
         self._offset: int
         self._endian: str
         self.file_type: str
