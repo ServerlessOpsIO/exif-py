@@ -34,23 +34,24 @@ class IfdTag:
             self.tag_name = cast(Tuple, tag_entry)[0]
 
     def __str__(self) -> str:
-        return self.printable
+        tag = '({}) {}={} @ {}'.format(
+            self.tag_id,
+            FIELD_TYPES[self.field_type][2],
+            self.printable,
+            self.field_offset
+        )
+        return tag
 
     def __repr__(self) -> str:
-        try:
-            tag = '(%s) %s=%s @ %d' % (
-                self.tag_id,
-                FIELD_TYPES[self.field_type][2],
-                self.printable,
-                self.field_offset
-            )
-        except TypeError:
-            tag = '(%s) %s=%s @ %s' % (
-                self.tag_id,
-                FIELD_TYPES[self.field_type][2],
-                self.printable,
-                str(self.field_offset)
-            )
+        tag = '<{}.{} tag_id={}, type={}, value={}, offset={} at {}>'.format(
+            self.__class__.__module__,
+            self.__class__.__name__,
+            self.tag_id,
+            FIELD_TYPES[self.field_type][2],
+            self.printable,
+            self.field_offset,
+            hex(id(self))
+        )
         return tag
 
     @property
@@ -146,7 +147,14 @@ class IfdBase:
         return '{} @ {}'.format(self.name, self.offset)
 
     def __repr__(self) -> str:
-        return '{} @ {}'.format(self.name, self.offset)
+        return '<{}.{} {} offset={}, endian={} at {}>'.format(
+            self.__class__.__module__,
+            self.__class__.__name__,
+            self.name,
+            self.offset,
+            self._endian,
+            hex(id(self))
+        )
 
     def _process_field(self, tag_name, count, field_type, type_length, offset):
         values = []

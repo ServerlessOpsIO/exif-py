@@ -27,7 +27,14 @@ class ExifHeader:
         return '{} EXIF Header @ {}'.format(self.file_type, self._offset)
 
     def __repr__(self) -> str:
-        return '{} EXIF Header @ {}'.format(self.file_type, self._offset)
+        return '<{}.{} {} offset={}, endian={} at {}>'.format(
+            self.__class__.__module__,
+            self.__class__.__name__,
+            self.file_type,
+            self._offset,
+            self._endian,
+            hex(id(self))
+        )
 
     def _first_ifd(self) -> int:
         """Return first IFD."""
