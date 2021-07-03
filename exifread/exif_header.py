@@ -1,12 +1,13 @@
 from io import BytesIO
-from typing import BinaryIO, Dict, List
+from typing import BinaryIO, Dict, List, Optional, Tuple, Union
 from xml.dom.minidom import parseString
 
 
 from .exif_log import get_logger
-from .ifd import Ifd, IfdTag
+from .ifd import IfdBase, Ifd, IfdTag, MakerNote
 from .utils import find_exif, n2b, s2n
 from .tags import FIELD_TYPES
+from .thumbnail import Thumbnail, THUMBNAIL_UNKNOWN_COMPRESSION, THUMBNAIL_UNKNOWN_FILE_TYPE
 
 logger = get_logger()
 
@@ -98,32 +99,75 @@ class ExifHeader:
         """
         return self._tags
 
-    def extract_tiff_thumbnail(self, thumb_ifd: int) -> None:
+    @property
+    def thumbnails(self) -> List[Thumbnail]:
+        """
+        Return all thumbnails
+        """
+        # FIXME: Need to iterate through IFDs, or SubIfds, and figure out
+        # which have thumbnail or uncompressed image info.
+        thumb_list = []
+        for _i in self.ifds:
+            thumb = self._extract_tiff_thumbnail(_i)
+            if thumb is not None:
+                thumb_list.append(thumb)
+
+            # Check SubIFDs if IFD0
+            if _i.name == 'IFD0':
+                for _s in _i.sub_ifds:
+                    thumb = self._extract_jpeg_thumbnail(_s)
+                    if thumb is not None:
+                        thumb_list.append(thumb)
+            # NOTE: IFD1 is for thumbnails... But some formats use more than
+            # IFD1. And the data can be spread across those IFDs. Noty sure
+            # how to handle that.
+            else:
+                thumb = self._extract_jpeg_thumbnail(_i)
+                if thumb is not None:
+                    thumb_list.append(thumb)
+
+                #thumb = self._extract_jpeg_thumbnail(_i.makernote)
+                #if thumb is not None:
+                #    thumb_list.append(thumb)
+
+        return thumb_list
+
+
+    def _extract_tiff_thumbnail(self, ifd: Ifd) -> Optional[Thumbnail]:
         """
         Extract uncompressed TIFF thumbnail.
 
         Take advantage of the pre-existing layout in the thumbnail IFD as
         much as possible
         """
-        # FIXME: Thumbnail no longer exists and we need to itterate through
-        # IFDs, possibly SubIFDs, to find this.
-        thumb = self._tags['IFD1']['Compression']
-        if not thumb or thumb.printable != 'Uncompressed TIFF':
-            return
+        file_type = ifd.tags.get('SubfileType')
+        if file_type is not None:
+            file_type_name = file_type.printable
+        else:
+            file_type_name = THUMBNAIL_UNKNOWN_FILE_TYPE
 
-        entries = s2n(self._file_handle, self._offset, thumb_ifd, 2, self._endian)
+        compression = ifd.tags.get('Compression')
+        if not compression or compression.printable != 'Uncompressed':
+            return None
+
+        if file_type is not None:
+            compression_name = compression.printable
+        else:
+            compression_name = THUMBNAIL_UNKNOWN_COMPRESSION
+
+        entries = s2n(self._file_handle, self._offset, ifd.offset, 2, self._endian)
         # this is header plus offset to IFD ...
         if self._endian == 'M':
             tiff = b'MM\x00*\x00\x00\x00\x08'
         else:
             tiff = b'II*\x00\x08\x00\x00\x00'
             # ... plus thumbnail IFD data plus a null "next IFD" pointer
-        self._file_handle.seek(self._offset + thumb_ifd)
+        self._file_handle.seek(self._offset + ifd.offset)
         tiff += self._file_handle.read(entries * 12 + 2) + b'\x00\x00\x00\x00'
 
         # fix up large value offset pointers into data area
         for i in range(entries):
-            entry = thumb_ifd + 2 + 12 * i
+            entry = ifd.offset + 2 + 12 * i
             tag = s2n(self._file_handle, self._offset, entry, 2, self._endian)
             field_type = s2n(self._file_handle, self._offset, entry + 2, 2, self._endian)
             type_length = FIELD_TYPES[field_type][0]
@@ -150,8 +194,8 @@ class ExifHeader:
                 tiff += self._file_handle.read(count * type_length)
 
         # add pixel strips and update strip offset info
-        old_offsets = self._tags['IFD1']['StripOffsets'].values
-        old_counts = self._tags['IFD1']['StripByteCounts'].values
+        old_offsets = ifd.tags.get('StripOffsets').values
+        old_counts = ifd.tags.get('StripByteCounts').values
         for i, old_offset in enumerate(old_offsets):
             # update offset pointer (more nasty "strings are immutable" crap)
             offset = n2b(len(tiff), strip_len, self._endian)
@@ -161,28 +205,67 @@ class ExifHeader:
             self._file_handle.seek(self._offset + old_offset)
             tiff += self._file_handle.read(old_counts[i])
 
-        self._tags['TIFFThumbnail'] = tiff
+        logger.debug('TIFF thumbnail found in {}'.format(ifd))
+        return Thumbnail(file_type_name, compression_name, BytesIO(tiff), ifd)
 
-    def extract_jpeg_thumbnail(self) -> None:
+    def _extract_jpeg_thumbnail(self, ifd: IfdBase) -> Optional[Thumbnail]:
         """
         Extract JPEG thumbnail.
 
         (Thankfully the JPEG data is stored as a unit.)
         """
-        # FIXME: Need to move to iterating through IFDs and SubIFDs to find them.
-        thumb_offset = self._tags['IFD1'].get('JPEGInterchangeFormat')
-        if thumb_offset:
-            self._file_handle.seek(self._offset + thumb_offset.values[0])
-            size = self._tags['IFD1']['JPEGInterchangeFormatLength'].values[0]
-            self._tags['JPEGThumbnail'] = self._file_handle.read(size)
+        # FIXME: Need to handle when this does not exist
+        thumb_offset = ifd.tags.get('ThumbnailOffset')
 
-        # Sometimes in a TIFF file, a JPEG thumbnail is hidden in the MakerNote
-        # since it's not allowed in a uncompressed TIFF IFD
-        if 'JPEGThumbnail' not in self._tags:
-            thumb_offset = self._tags.get('MakerNote JPEGThumbnail')
-            if thumb_offset:
-                self._file_handle.seek(self._offset + thumb_offset.values[0])
-                self._tags['JPEGThumbnail'] = self._file_handle.read(thumb_offset.field_length)
+        file_type = ifd.tags.get('SubfileType')
+        if file_type is not None:
+            file_type_name = file_type.printable
+        else:
+            file_type_name = THUMBNAIL_UNKNOWN_FILE_TYPE
+
+        compression = ifd.tags.get('Compression')
+        if compression is not None:
+            compression_name = compression.printable
+        else:
+            compression_name = THUMBNAIL_UNKNOWN_COMPRESSION
+
+        thumbnail: Union[Thumbnail, None]
+        if thumb_offset:
+            # FIXME: How should we handle most missing tags?
+            self._file_handle.seek(self._offset + thumb_offset.values[0])
+            size = ifd.tags.get('ThumbnailLength').values[0]
+            thumb: bytes = self._file_handle.read(size)
+
+            logger.debug('JPEG thumbnail found in {}'.format(ifd))
+            # FIXME: Should we use the numeric EXIF values instead?
+            thumbnail = Thumbnail(file_type_name, compression_name, BytesIO(thumb), ifd)
+        else:
+            thumbnail = None
+
+        return thumbnail
+
+    def _extract_makernote_thumbnail(self, makernote: MakerNote) -> Optional[Thumbnail]:
+        """
+        Extract thumbnail from Maker Notes.
+        """
+        thumbnail: Union[Thumbnail, None]
+        # FIXME: This is actually Olympus only as far as known currently.
+        #if 'JPEGThumbnail' not in self._tags:
+        #    thumb_offset = self._tags.get('MakerNote JPEGThumbnail')
+        #    if thumb_offset:
+        #        self._file_handle.seek(self._offset + thumb_offset.values[0])
+        #        self._tags['JPEGThumbnail'] = self._file_handle.read(thumb_offset.field_length)
+
+        return None
+
+
+    @property
+    def image(self):
+        pass
+
+    def _extract_image(self):
+        pass
+
 
     def parse_xmp(self) -> str:
         """Adobe's Extensible Metadata Platform, just dump the pretty XML."""

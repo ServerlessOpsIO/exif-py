@@ -383,8 +383,10 @@ TAGS_NEW = {
         65000: 'Kodak DCR Compressed',
         65535: 'Pentax PEF Compressed',
     }),
-    0x0201: ('PreviewImageStart', ),
-    0x0202: ('PreviewImageLength', ),
+    # NOTE: Nikon calls these next two JpgFromRaw* but every maker calls them
+    # something slightly different. Just going to standardize on this.
+    0x0201: ('ThumbnailOffset', ),
+    0x0202: ('ThumbnailLength', ),
     0x0213: ('PreviewYCbCrPositioning', {
         1: 'Centered',
         2: 'Co-sited',

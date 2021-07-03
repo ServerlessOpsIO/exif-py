@@ -320,6 +320,7 @@ class SubIfd(IfdBase):
         self._parent_ifd = parent_ifd
 
 
+# FIXME: Add maker name
 class MakerNote(IfdBase):
     """
     A MakerNote
@@ -351,7 +352,21 @@ class MakerNote(IfdBase):
         )
 
         self._tag_dict = tag_dict
-        self.maker_name = maker_name
+        self.maker_name = maker_name.upper()
+
+    def __str__(self) -> str:
+        return '{} {} @ {}'.format(self.maker_name, self.name, self.offset)
+
+    def __repr__(self) -> str:
+        return '<{}.{} {} maker_name={}, offset={}, endian={} at {}>'.format(
+            self.__class__.__module__,
+            self.__class__.__name__,
+            self.name,
+            self.maker_name,
+            self.offset,
+            self._endian,
+            hex(id(self))
+        )
 
 
 class Ifd(IfdBase):
@@ -570,6 +585,7 @@ class Ifd(IfdBase):
             tag_entry = SUBIFD_TAGS.get(t)
             tag = self.tags.get(t)
             if tag is not None and tag_entry is not None:
+                # FIXME: Work in SubIfd02
                 try:
                     for value in tag.values:
                         logger.debug('%s SubIFD at offset %d:', tag_entry[0], value)

@@ -208,8 +208,10 @@ EXIF_TAGS: SubIfdTagsType = {
     0x0157: ('ClipPath', ),
     0x015B: ('JPEGTables', ),
     0x0200: ('JPEGProc', ),
-    0x0201: ('JPEGInterchangeFormat', ),    # JpegIFOffset
-    0x0202: ('JPEGInterchangeFormatLength', ),  # JpegIFByteCount
+    # These next two names can change based on the IFD but we're just going to
+    # settle on this because it's all the same.
+    0x0201: ('ThumbnailOffset', ),
+    0x0202: ('ThumbnailLength', ),
     0x0211: ('YCbCrCoefficients', ),
     0x0212: ('YCbCrSubSampling', ),
     0x0213: ('YCbCrPositioning', {
@@ -347,6 +349,16 @@ EXIF_TAGS: SubIfdTagsType = {
     0x9214: ('SubjectArea', ),
     0x9215: ('ExposureIndex', ),
     0x9216: ('TIFF/EPStandardID', ),
+    0x9217: ('SensingMethod', {
+        1: 'Monochrome area',
+        2: 'One-chip color area',
+        3: 'Two-chip color area',
+        4: 'Three-chip color area',
+        5: 'Color sequential area',
+        6: 'Monochrome linear',
+        7: 'Trilinear',
+        8: 'Color sequential linear',
+    }),
     0x927C: ('MakerNote', ),
     0x9286: ('UserComment', make_string_uc),
     0x9290: ('SubSecTime', ),

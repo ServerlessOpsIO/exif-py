@@ -11,10 +11,23 @@ from .exif_log import get_logger
 
 logger = get_logger()
 
+ENDIANS = {
+    'I': 'Intel',
+    'M': 'Motorola',
+    '\x01': 'Adobe Ducky',
+    'd': 'XMP/Adobe unknown'
+}
+
+ENDIANNESS = {
+    'I': 'Little Endian',
+    'M': 'Big Endian'
+}
+
 FILE_TYPE_TIFF = 'TIFF'
 FILE_TYPE_JPEG = 'JPEG'
 FILE_TYPE_HEIC = 'HEIC'
 FILE_TYPE_WEBP = 'WEBP'
+
 
 class InvalidExif(Exception):
     pass
