@@ -23,6 +23,7 @@ class ExifHeader:
 
         self.file_type, self._offset, self._endian = find_exif(self._file_handle)
         self.ifds: List[Ifd] = self._list_ifds()
+        self._image_ifds, self._thumbnail_ifds = self._find_image_ifds()
 
     def __str__(self) -> str:
         return '{} EXIF Header @ {}'.format(self.file_type, self._offset)
@@ -40,6 +41,39 @@ class ExifHeader:
     def _first_ifd(self) -> int:
         """Return first IFD."""
         return s2n(self._file_handle, self._offset, 4, 4, self._endian)
+
+    def _find_image_ifds(self) -> Tuple[List[IfdBase], List[IfdBase]]:
+        """Return IFDs containing image data"""
+        image_ifds: List[IfdBase] = []
+        thumbnail_ifds: List[IfdBase] = []
+
+        for _i in self.ifds:
+            if _i.tags.get('Compression'):
+                sub_file_type = _i.tags.get('SubfileType')
+                if sub_file_type:
+                    if sub_file_type.printable == 'Reduced-resolution image':
+                        thumbnail_ifds.append(_i)
+                    elif sub_file_type.printable == 'Full-resolution image':
+                        image_ifds.append(_i)
+                    else:
+                        logger.debug('Unrecognized SubFileType')
+                else:
+                    thumbnail_ifds.append(_i)
+
+            for _s in _i.sub_ifds:
+                if _s.tags.get('Compression'):
+                    sub_file_type = _s.tags.get('SubfileType')
+                    if sub_file_type:
+                        if sub_file_type.printable == 'Reduced-resolution image':
+                            thumbnail_ifds.append(_s)
+                        elif sub_file_type.printable == 'Full-resolution image':
+                            image_ifds.append(_s)
+                        else:
+                            logger.debug('Unrecognized SubFileType')
+                    else:
+                        thumbnail_ifds.append(_s)
+
+        return image_ifds, thumbnail_ifds
 
     def _list_header_ifd_offsets(self) -> List[int]:
         """Return the list of IFDs in the header."""
@@ -104,36 +138,19 @@ class ExifHeader:
         """
         Return all thumbnails
         """
-        # FIXME: Need to iterate through IFDs, or SubIfds, and figure out
-        # which have thumbnail or uncompressed image info.
         thumb_list = []
-        for _i in self.ifds:
-            thumb = self._extract_tiff_thumbnail(_i)
+        for _thumb_ifd in self._thumbnail_ifds:
+            if _thumb_ifd.tags.get('Compression') == 'Uncompressed':
+                thumb = self._extract_tiff_thumbnail(_thumb_ifd)
+            else:
+                thumb = self._extract_jpeg_thumbnail(_thumb_ifd)
+
             if thumb is not None:
                 thumb_list.append(thumb)
 
-            # Check SubIFDs if IFD0
-            if _i.name == 'IFD0':
-                for _s in _i.sub_ifds:
-                    thumb = self._extract_jpeg_thumbnail(_s)
-                    if thumb is not None:
-                        thumb_list.append(thumb)
-            # NOTE: IFD1 is for thumbnails... But some formats use more than
-            # IFD1. And the data can be spread across those IFDs. Noty sure
-            # how to handle that.
-            else:
-                thumb = self._extract_jpeg_thumbnail(_i)
-                if thumb is not None:
-                    thumb_list.append(thumb)
-
-                #thumb = self._extract_jpeg_thumbnail(_i.makernote)
-                #if thumb is not None:
-                #    thumb_list.append(thumb)
-
         return thumb_list
 
-
-    def _extract_tiff_thumbnail(self, ifd: Ifd) -> Optional[Thumbnail]:
+    def _extract_tiff_thumbnail(self, ifd: IfdBase) -> Optional[Thumbnail]:
         """
         Extract uncompressed TIFF thumbnail.
 
@@ -147,13 +164,19 @@ class ExifHeader:
             file_type_name = THUMBNAIL_UNKNOWN_FILE_TYPE
 
         compression = ifd.tags.get('Compression')
-        if not compression or compression.printable != 'Uncompressed':
-            return None
-
-        if file_type is not None:
+        if compression is not None:
             compression_name = compression.printable
         else:
             compression_name = THUMBNAIL_UNKNOWN_COMPRESSION
+
+        if ifd.tags.get('StripOffsets') is not None:
+            offset_name = 'StripOffsets'
+            byte_count_name = 'StripByteCounts'
+        elif ifd.tags.get('ThumbnailOffset') is not None:
+            offset_name = 'ThumbnailOffset'
+            byte_count_name = 'ThumbnailLength'
+        else:
+            logger.debug('Cannot find thumbnail offset tags in IFD {}'.format(ifd))
 
         entries = s2n(self._file_handle, self._offset, ifd.offset, 2, self._endian)
         # this is header plus offset to IFD ...
@@ -194,8 +217,8 @@ class ExifHeader:
                 tiff += self._file_handle.read(count * type_length)
 
         # add pixel strips and update strip offset info
-        old_offsets = ifd.tags.get('StripOffsets').values
-        old_counts = ifd.tags.get('StripByteCounts').values
+        old_offsets = ifd.tags.get(offset_name).values
+        old_counts = ifd.tags.get(byte_count_name).values
         for i, old_offset in enumerate(old_offsets):
             # update offset pointer (more nasty "strings are immutable" crap)
             offset = n2b(len(tiff), strip_len, self._endian)
@@ -215,7 +238,16 @@ class ExifHeader:
         (Thankfully the JPEG data is stored as a unit.)
         """
         # FIXME: Need to handle when this does not exist
-        thumb_offset = ifd.tags.get('ThumbnailOffset')
+        if ifd.tags.get('StripOffsets') is not None:
+            offset_name = 'StripOffsets'
+            byte_count_name = 'StripByteCounts'
+        elif ifd.tags.get('ThumbnailOffset') is not None:
+            offset_name = 'ThumbnailOffset'
+            byte_count_name = 'ThumbnailLength'
+        else:
+            logger.debug('Cannot find thumbnail offset tags in IFD {}'.format(ifd))
+
+        thumb_offset = ifd.tags.get(offset_name)
 
         file_type = ifd.tags.get('SubfileType')
         if file_type is not None:
@@ -233,7 +265,7 @@ class ExifHeader:
         if thumb_offset:
             # FIXME: How should we handle most missing tags?
             self._file_handle.seek(self._offset + thumb_offset.values[0])
-            size = ifd.tags.get('ThumbnailLength').values[0]
+            size = ifd.tags.get(byte_count_name).values[0]
             thumb: bytes = self._file_handle.read(size)
 
             logger.debug('JPEG thumbnail found in {}'.format(ifd))

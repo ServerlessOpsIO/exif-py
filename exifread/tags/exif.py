@@ -57,7 +57,7 @@ GPS_TAGS: SubIfdTagsType = {
 # Main Exif tag names
 EXIF_TAGS: SubIfdTagsType = {
     0x00FE: ('SubfileType', {
-        0x0: 'Full-resolution Image',
+        0x0: 'Full-resolution image',
         0x1: 'Reduced-resolution image',
         0x2: 'Single page of multi-page image',
         0x3: 'Single page of multi-page reduced-resolution image',
