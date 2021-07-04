@@ -7,7 +7,7 @@ from .exif_log import get_logger
 from .ifd import IfdBase, Ifd, IfdTag, MakerNote
 from .utils import find_exif, n2b, s2n
 from .tags import FIELD_TYPES
-from .thumbnail import Thumbnail, THUMBNAIL_UNKNOWN_COMPRESSION, THUMBNAIL_UNKNOWN_FILE_TYPE
+from .image import Image, IMAGE_UNKNOWN_COMPRESSION, IMAGE_UNKNOWN_FILE_TYPE
 
 logger = get_logger()
 
@@ -134,25 +134,25 @@ class ExifHeader:
         return self._tags
 
     @property
-    def thumbnails(self) -> List[Thumbnail]:
+    def thumbnails(self) -> List[Image]:
         """
         Return all thumbnails
         """
         thumb_list = []
         for _thumb_ifd in self._thumbnail_ifds:
             if _thumb_ifd.tags.get('Compression') == 'Uncompressed':
-                thumb = self._extract_tiff_thumbnail(_thumb_ifd)
+                thumb = self._extract_tiff_image(_thumb_ifd)
             else:
-                thumb = self._extract_jpeg_thumbnail(_thumb_ifd)
+                thumb = self._extract_image(_thumb_ifd)
 
             if thumb is not None:
                 thumb_list.append(thumb)
 
         return thumb_list
 
-    def _extract_tiff_thumbnail(self, ifd: IfdBase) -> Optional[Thumbnail]:
+    def _extract_tiff_image(self, ifd: IfdBase) -> Optional[Image]:
         """
-        Extract uncompressed TIFF thumbnail.
+        Extract uncompressed TIFF image.
 
         Take advantage of the pre-existing layout in the thumbnail IFD as
         much as possible
@@ -161,13 +161,13 @@ class ExifHeader:
         if file_type is not None:
             file_type_name = file_type.printable
         else:
-            file_type_name = THUMBNAIL_UNKNOWN_FILE_TYPE
+            file_type_name = IMAGE_UNKNOWN_FILE_TYPE
 
         compression = ifd.tags.get('Compression')
         if compression is not None:
             compression_name = compression.printable
         else:
-            compression_name = THUMBNAIL_UNKNOWN_COMPRESSION
+            compression_name = IMAGE_UNKNOWN_COMPRESSION
 
         if ifd.tags.get('StripOffsets') is not None:
             offset_name = 'StripOffsets'
@@ -229,13 +229,11 @@ class ExifHeader:
             tiff += self._file_handle.read(old_counts[i])
 
         logger.debug('TIFF thumbnail found in {}'.format(ifd))
-        return Thumbnail(file_type_name, compression_name, BytesIO(tiff), ifd)
+        return Image(file_type_name, compression_name, BytesIO(tiff), ifd)
 
-    def _extract_jpeg_thumbnail(self, ifd: IfdBase) -> Optional[Thumbnail]:
+    def _extract_image(self, ifd: IfdBase) -> Optional[Image]:
         """
-        Extract JPEG thumbnail.
-
-        (Thankfully the JPEG data is stored as a unit.)
+        Extract image.
         """
         # FIXME: Need to handle when this does not exist
         if ifd.tags.get('StripOffsets') is not None:
@@ -253,15 +251,15 @@ class ExifHeader:
         if file_type is not None:
             file_type_name = file_type.printable
         else:
-            file_type_name = THUMBNAIL_UNKNOWN_FILE_TYPE
+            file_type_name = IMAGE_UNKNOWN_FILE_TYPE
 
         compression = ifd.tags.get('Compression')
         if compression is not None:
             compression_name = compression.printable
         else:
-            compression_name = THUMBNAIL_UNKNOWN_COMPRESSION
+            compression_name = IMAGE_UNKNOWN_COMPRESSION
 
-        thumbnail: Union[Thumbnail, None]
+        thumbnail: Union[Image, None]
         if thumb_offset:
             # FIXME: How should we handle most missing tags?
             self._file_handle.seek(self._offset + thumb_offset.values[0])
@@ -270,17 +268,17 @@ class ExifHeader:
 
             logger.debug('JPEG thumbnail found in {}'.format(ifd))
             # FIXME: Should we use the numeric EXIF values instead?
-            thumbnail = Thumbnail(file_type_name, compression_name, BytesIO(thumb), ifd)
+            thumbnail = Image(file_type_name, compression_name, BytesIO(thumb), ifd)
         else:
             thumbnail = None
 
         return thumbnail
 
-    def _extract_makernote_thumbnail(self, makernote: MakerNote) -> Optional[Thumbnail]:
+    def _extract_makernote_thumbnail(self, makernote: MakerNote) -> Optional[Image]:
         """
         Extract thumbnail from Maker Notes.
         """
-        thumbnail: Union[Thumbnail, None]
+        thumbnail: Union[Image, None]
         # FIXME: This is actually Olympus only as far as known currently.
         #if 'JPEGThumbnail' not in self._tags:
         #    thumb_offset = self._tags.get('MakerNote JPEGThumbnail')
@@ -292,12 +290,21 @@ class ExifHeader:
 
 
     @property
-    def image(self):
-        pass
+    def images(self) -> List[Optional[Image]]:
+        """
+        Return image
+        """
+        image_list = []
+        for _image_ifd in self._image_ifds:
 
-    def _extract_image(self):
-        pass
+            # FIXME: Is this correct? Which one should I use?
+            image = self._extract_image(_image_ifd)
+            image_list.append(image)
 
+            tiff = self._extract_image(_image_ifd)
+            image_list.append(tiff)
+
+        return image_list
 
     def parse_xmp(self) -> str:
         """Adobe's Extensible Metadata Platform, just dump the pretty XML."""

@@ -1,16 +1,16 @@
 '''
-Thumbnail image
+File image
 '''
 from typing import BinaryIO, Optional
 
 from .ifd import IfdBase
 
-THUMBNAIL_UNKNOWN_COMPRESSION = 'UNKNOWN'
-THUMBNAIL_UNKNOWN_FILE_TYPE = 'UNKNOWN'
+IMAGE_UNKNOWN_COMPRESSION = 'UNKNOWN'
+IMAGE_UNKNOWN_FILE_TYPE = 'UNKNOWN'
 
-class Thumbnail:
+class Image:
     '''
-    Image thumbnail
+    File image
     '''
     def __init__(self,
                  file_type: str,
