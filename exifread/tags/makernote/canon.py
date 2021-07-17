@@ -328,6 +328,7 @@ TAGS = {
     }),
 }
 
+# FIXME: Need to work these into field processing.
 # this is in element offset, name, optional value dictionary format
 # 0x0001
 CAMERA_SETTINGS = {

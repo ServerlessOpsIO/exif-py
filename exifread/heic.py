@@ -11,7 +11,7 @@
 #      gives us position and size information.
 
 import struct
-from typing import List, Dict, Callable, BinaryIO, Optional
+from typing import List, Dict, Callable, BinaryIO, Optional, Tuple
 
 from .exif_log import get_logger
 
@@ -261,7 +261,7 @@ class HEICExifFinder:
                 extents.append((extent_offset, extent_length))
             box.locs[item_id] = extents
 
-    def find_exif(self) -> tuple:
+    def find_exif(self) -> Tuple[int, bytes]:
         ftyp = self.expect_parse('ftyp')
         assert ftyp.major_brand == b'heic'
         assert ftyp.minor_version == 0

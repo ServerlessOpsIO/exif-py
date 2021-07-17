@@ -1,24 +1,26 @@
 """
 Standard tag definitions.
 """
+from typing import Callable, Dict, Tuple, Union
 
 from ..utils import make_string, make_string_uc
 
+SubIfdTagsType = Dict[int, Union[Tuple[str], Tuple[str, Union[Callable, Dict[int, str]]]]]
+IfdTagMapType = Dict[str, SubIfdTagsType]
+SubIfdTagsMapType = Dict[str, Tuple[str, SubIfdTagsType]]
+
+
 # Interoperability tags
-INTEROP_TAGS = {
+INTEROP_TAGS: SubIfdTagsType = {
     0x0001: ('InteroperabilityIndex', ),
     0x0002: ('InteroperabilityVersion', ),
     0x1000: ('RelatedImageFileFormat', ),
     0x1001: ('RelatedImageWidth', ),
     0x1002: ('RelatedImageLength', ),
 }
-INTEROP_INFO = (
-    'Interoperability',
-    INTEROP_TAGS
-)
 
 # GPS tags
-GPS_TAGS = {
+GPS_TAGS: SubIfdTagsType = {
     0x0000: ('GPSVersionID', ),
     0x0001: ('GPSLatitudeRef', ),
     0x0002: ('GPSLatitude', ),
@@ -51,15 +53,11 @@ GPS_TAGS = {
     0x001D: ('GPSDate', ),
     0x001E: ('GPSDifferential', ),
 }
-GPS_INFO = (
-    'GPS',
-    GPS_TAGS
-)
 
 # Main Exif tag names
-EXIF_TAGS = {
+EXIF_TAGS: SubIfdTagsType = {
     0x00FE: ('SubfileType', {
-        0x0: 'Full-resolution Image',
+        0x0: 'Full-resolution image',
         0x1: 'Reduced-resolution image',
         0x2: 'Single page of multi-page image',
         0x3: 'Single page of multi-page reduced-resolution image',
@@ -181,6 +179,7 @@ EXIF_TAGS = {
         1: 'Regenerated',
         2: 'Unclean'
     }),
+    0x014A: ('SubIFDs', ),
     0x0148: ('ConsecutiveBadFaxLines', ),
     0x014C: ('InkSet', {
         1: 'CMYK',
@@ -207,9 +206,12 @@ EXIF_TAGS = {
     0x0155: ('SMaxSampleValue', ),
     0x0156: ('TransferRange', ),
     0x0157: ('ClipPath', ),
+    0x015B: ('JPEGTables', ),
     0x0200: ('JPEGProc', ),
-    0x0201: ('JPEGInterchangeFormat', ),
-    0x0202: ('JPEGInterchangeFormatLength', ),
+    # These next two names can change based on the IFD but we're just going to
+    # settle on this because it's all the same.
+    0x0201: ('ThumbnailOffset', ),
+    0x0202: ('ThumbnailLength', ),
     0x0211: ('YCbCrCoefficients', ),
     0x0212: ('YCbCrSubSampling', ),
     0x0213: ('YCbCrPositioning', {
@@ -217,7 +219,7 @@ EXIF_TAGS = {
         2: 'Co-sited'
     }),
     0x0214: ('ReferenceBlackWhite', ),
-    0x02BC: ('ApplicationNotes', ),  # XPM Info
+    0x02BC: ('ApplicationNotes', ),  # XMP Info
     0x4746: ('Rating', ),
     0x828D: ('CFARepeatPatternDim', ),
     0x828E: ('CFAPattern', ),
@@ -240,9 +242,12 @@ EXIF_TAGS = {
         8: 'Landscape Mode'
     }),
     0x8824: ('SpectralSensitivity', ),
-    0x8825: ('GPSInfo', GPS_INFO),  # GPS tags
+    0x8825: ('GPSInfo', ),  # GPS tags
     0x8827: ('ISOSpeedRatings', ),
     0x8828: ('OECF', ),
+    0x8829: ('Interlace', ),
+    0x882A: ('TimeZoneOffset', ),
+    0x882B: ('SelfTimerMode', ),
     0x8830: ('SensitivityType', {
         0: 'Unknown',
         1: 'Standard Output Sensitivity',
@@ -335,7 +340,25 @@ EXIF_TAGS = {
         95: 'Flash fired, auto mode, return light detected, red-eye reduction mode'
     }),
     0x920A: ('FocalLength', ),
+    0x920B: ('FlashEnergy', ),
+    0x920C: ('SpatialFrequencyResponse', ),
+    0x920D: ('Noise', ),
+    0x9211: ('ImageNumber', ),
+    0x9212: ('SecurityClassification', ),
+    0x9213: ('ImageHistory', ),
     0x9214: ('SubjectArea', ),
+    0x9215: ('ExposureIndex', ),
+    0x9216: ('TIFF/EPStandardID', ),
+    0x9217: ('SensingMethod', {
+        1: 'Monochrome area',
+        2: 'One-chip color area',
+        3: 'Two-chip color area',
+        4: 'Three-chip color area',
+        5: 'Color sequential area',
+        6: 'Monochrome linear',
+        7: 'Trilinear',
+        8: 'Color sequential linear',
+    }),
     0x927C: ('MakerNote', ),
     0x9286: ('UserComment', make_string_uc),
     0x9290: ('SubSecTime', ),
@@ -357,7 +380,7 @@ EXIF_TAGS = {
     0xA002: ('ExifImageWidth', ),
     0xA003: ('ExifImageLength', ),
     0xA004: ('RelatedSoundFile', ),
-    0xA005: ('InteroperabilityOffset', INTEROP_INFO),
+    0xA005: ('InteroperabilityOffset', ),
     0xA20B: ('FlashEnergy', ),               # 0x920B in TIFF/EP
     0xA20C: ('SpatialFrequencyResponse', ),  # 0x920C
     0xA20E: ('FocalPlaneXResolution', ),     # 0x920E
@@ -443,3 +466,27 @@ EXIF_TAGS = {
     0xFDE8: ('OwnerName', ),
     0xFDE9: ('SerialNumber', ),
 }
+
+IFD_TAG_MAP: IfdTagMapType = {
+    'IFD': EXIF_TAGS,   # Spec says there are IFD{0,1} but have seen more so we drop the number
+    'EXIF': EXIF_TAGS,
+    'GPS': GPS_TAGS,
+    'Interoperability': INTEROP_TAGS,
+    'SubIFD': EXIF_TAGS,
+}
+
+SUBIFD_TAGS: SubIfdTagsMapType = {
+    'ExifOffset': (
+        'EXIF', IFD_TAG_MAP.get('EXIF', {})
+    ),
+    'GPSInfo': (
+        'GPS', IFD_TAG_MAP.get('GPS', {})
+    ),
+    'InteroperabilityOffset': (
+        'Interoperability', IFD_TAG_MAP.get('Interoperability', {})
+    ),
+    'SubIFDs': (
+        'SubIFD', IFD_TAG_MAP.get('SubIFD', {})
+    ),
+}
+
